@@ -7,7 +7,8 @@
 //   npm run qa                         build + test at 1440x900 and 1920x1080
 //   npm run qa -- --skip-build         reuse dist/
 //   npm run qa -- --url http://…/      test an already running server
-//   options: --port 4177  --out .shots  --sizes 1440x900,1920x1080
+//   options: --port 4177  --out .shots  --sizes 1440x900,1920x1080  --timescale 6 (sim steps per frame;
+//   SwiftShader renders a few fps, so the walk is sped up — screenshots are low-quality preset)
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -20,6 +21,7 @@ const flag = (n) => argv.includes(`--${n}`);
 const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 const port = Number(opt('port', 4177));
 const outDir = resolve(ROOT, opt('out', '.shots'));
+const timescale = Number(opt('timescale', 6));
 const sizes = opt('sizes', '1440x900,1920x1080').split(',').map((s) => s.split('x').map(Number));
 mkdirSync(outDir, { recursive: true });
 
@@ -85,7 +87,9 @@ async function arriveAt(page, id, ms = 120000) {
   let maxStep = 0;
   for (let i = 1; i < samples.length; i++) maxStep = Math.max(maxStep, Math.hypot(samples[i].x - samples[i - 1].x, samples[i].z - samples[i - 1].z));
   const s = await state(page);
-  return { arrived: s.currentStop === id && s.avatarAtStop, total, maxStep, samples: samples.length, walked: samples.some((p) => p.state === 'walk') };
+  let moving = 0;
+  for (let i = 1; i < samples.length; i++) if (Math.hypot(samples[i].x - samples[i - 1].x, samples[i].z - samples[i - 1].z) > 0.01) moving++;
+  return { arrived: s.currentStop === id && s.avatarAtStop, total, maxStep, moving, walked: samples.some((p) => p.state === 'walk') };
 }
 
 async function run(base, [w, hgt]) {
@@ -95,7 +99,7 @@ async function run(base, [w, hgt]) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
-  await page.goto(base, { waitUntil: 'load' });
+  await page.goto(`${base}?quality=low&timescale=${timescale}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.colsonCV && document.getElementById('loader').classList.contains('done'), null, { timeout: 30000 });
   await sleep(4000);
   const shot = (n) => page.screenshot({ path: join(outDir, `${tag}-${n}.png`) });
@@ -108,8 +112,9 @@ async function run(base, [w, hgt]) {
   for (let i = 0; i < stops.length; i++) {
     await page.keyboard.press(i === 0 ? 'Enter' : 'n');
     const r = await arriveAt(page, stops[i]);
-    // a teleport would be one sample jumping most of the distance; walking speed is ≤ 3 m/s
-    check(`${tag} walk to ${stops[i]}`, r.arrived && r.walked && r.maxStep < 2, `moved ${r.total.toFixed(1)} m, largest 250 ms step ${r.maxStep.toFixed(2)} m`);
+    // a teleport would be one sample covering most of the distance; a walk is many small steps
+    check(`${tag} walk to ${stops[i]}`, r.arrived && r.walked && r.moving >= 4 && r.maxStep < Math.max(0.5, r.total * 0.4),
+      `moved ${r.total.toFixed(1)} m over ${r.moving} samples, largest sample step ${r.maxStep.toFixed(2)} m`);
     await sleep(1800); // camera settles
     await shot(`${String(i + 1).padStart(2, '0')}-${stops[i]}`);
   }

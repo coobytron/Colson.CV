@@ -32,6 +32,8 @@ npm run qa       # build, then drive the tour in headless Chromium; screenshots 
 
 `npm run qa` runs at 1440×900 and 1920×1080. It checks that every stop is reached by walking, not teleporting; that the Gardener holds his place at a stop when left alone; that there's no auto-advance; that Free Explore and back keeps the tour's place; that number-key jumps work; and that the console stays clean. Add `--skip-build` to reuse `dist/`, or `--sizes 1440x900` for a single size.
 
+Software GL renders only a few frames a second, so QA loads the page with `?quality=low&timescale=6`. `timescale` is a test/dev-only URL parameter that runs N simulation steps per rendered frame. It doesn't change anything for a normal visitor.
+
 ## State model
 
 `src/modes/CVMode.js` owns the tour state. Later features (the boredom timer, the Local Lab handoff) subscribe with `cv.onState(fn)`:

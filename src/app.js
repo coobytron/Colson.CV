@@ -48,6 +48,8 @@ export class App {
     this.canvas = canvas;
     const params = new URLSearchParams(location.search);
     this.lowQuality = params.get('quality') === 'low' || matchMedia('(max-width: 700px)').matches;
+    // Test/dev only: run the simulation N steps per rendered frame (slow software-GL QA runs).
+    this.timeScale = Math.max(1, Math.min(16, Math.round(Number(params.get('timescale')) || 1)));
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     this.maxDpr = this.lowQuality ? 1.25 : 1.75;
@@ -313,23 +315,27 @@ export class App {
   }
 
   frame(dt) {
-    this.env.update(dt);
     if (this.pendingMove) {
       const e = this.pendingMove;
       this.pendingMove = null;
       this.mode?.onHover?.(this.pick(e.clientX, e.clientY), e);
     }
-    for (const m of Object.values(this.modes)) m.update(dt, m === this.mode);
-    for (const a of this.actors) a.update(dt, this);
-    this.spores.update(dt * this.env.speed, this.env);
-    this.ripples.update(dt, this.env.rain, this.controls.target);
+    for (let i = 0; i < this.timeScale; i++) this.step(dt);
     this.rain.uniforms.uCenter.value.copy(this.controls.target);
     this.fireflies.uniforms.uAlpha.value = clamp(1 - this.env.rain * 1.5);
-    this.updateCamera(dt);
+    this.updateCamera(dt * this.timeScale);
     this.finalPass.uniforms.uTime.value = this.env.time;
     this.composer.render(dt);
     this.adaptQuality(dt);
     this.onFrame?.(dt);
+  }
+
+  step(dt) {
+    this.env.update(dt);
+    for (const m of Object.values(this.modes)) m.update(dt, m === this.mode);
+    for (const a of this.actors) a.update(dt, this);
+    this.spores.update(dt * this.env.speed, this.env);
+    this.ripples.update(dt, this.env.rain, this.controls.target);
   }
 
   adaptQuality(dt) {

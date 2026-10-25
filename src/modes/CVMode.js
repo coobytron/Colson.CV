@@ -202,7 +202,7 @@ export class CVMode extends Mode {
     this.cardStop = s;
     const n = this.stops.length;
     const guided = this.state.tourMode === 'guided';
-    this.card.replaceChildren(
+    this.card.replaceChildren(...[
       h('div', { class: 'card-top' },
         h('span', { class: 'tag', style: { '--c': s.color } }, `Chapter ${s.index + 1}`),
         h('span', { class: 'count' }, `${s.index + 1} / ${n}`),
@@ -216,7 +216,7 @@ export class CVMode extends Mode {
         button({ icon: I.prev, title: 'Previous stop (PageUp / B)', cls: 'icon', onClick: () => this.prev() }),
         h('span', { class: 'hint' }, h('kbd', {}, 'B'), ' ', h('kbd', {}, 'N'), ' previous / next'),
         button({ icon: I.next, title: 'Next stop (PageDown / N)', cls: 'icon', onClick: () => this.next() })),
-    );
+    ].filter(Boolean));
     this.card.setAttribute('aria-labelledby', 'cardTitle');
     this.card.style.setProperty('--accent', s.color);
     this.card.classList.add('open');
