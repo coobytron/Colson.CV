@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Colson Knight — Playable CV</title>
+  <meta name="description" content="Colson Knight's CV as a small game: the Gardener walks a bioluminescent mushroom grove, one stop per chapter." />
+  <meta name="theme-color" content="#04080a" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M8 34a24 18 0 0 1 48 0z' fill='%2335e0d8'/><rect x='27' y='32' width='10' height='22' rx='5' fill='%23d6f5f2'/></svg>" />
+  <link rel="stylesheet" href="./src/styles.css" />
+  <link rel="stylesheet" href="./src/cv.css" />
+</head>
+<body data-tour="intro">
+  <canvas id="scene" aria-label="Interactive 3D mushroom grove with the Gardener"></canvas>
+
+  <div id="ui">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Playable CV home">
+        <span class="logo" aria-hidden="true"></span>
+        <span class="brand-text"><b>Colson Knight</b><small>Art Director</small></span>
+      </a>
+      <div id="status" class="status glass" role="status" aria-live="polite"></div>
+      <div id="actions" class="actions"></div>
+    </header>
+
+    <section id="intro" aria-labelledby="introTitle">
+      <h1 id="introTitle">Colson Knight, <em>Art Director</em>.<br />A walk through the grove.</h1>
+      <p>Each glowing mushroom is a chapter. The Gardener walks you through them in order, or you can wander on your own.</p>
+      <div class="intro-actions">
+        <button class="btn primary big" type="button" data-begin>Begin the tour <kbd>Enter</kbd></button>
+        <button class="btn big" type="button" data-explore>Free explore <kbd>F</kbd></button>
+      </div>
+    </section>
+
+    <div id="labels" aria-hidden="false"></div>
+    <aside id="card" class="glass" aria-live="polite"></aside>
+    <footer id="dock" class="glass"></footer>
+    <div id="toast" role="status"></div>
+
+    <div id="help" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="help-card glass">
+        <h2 id="helpTitle">How to play</h2>
+        <div class="help-grid">
+          <section>
+            <h3>Tour</h3>
+            <ul>
+              <li><kbd>N</kbd> / <kbd>PageDown</kbd> next stop · <kbd>B</kbd> / <kbd>PageUp</kbd> previous</li>
+              <li><kbd>1</kbd>–<kbd>6</kbd> jump to a stop</li>
+              <li><kbd>F</kbd> free explore · <kbd>G</kbd> back to the tour</li>
+              <li>The tour never moves on by itself</li>
+            </ul>
+          </section>
+          <section>
+            <h3>Gardener &amp; camera</h3>
+            <ul>
+              <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows walk · <kbd>Shift</kbd> run · <kbd>C</kbd> sit</li>
+              <li><kbd>Drag</kbd> look around · <kbd>Scroll</kbd> / pinch zoom</li>
+              <li><kbd>Tap</kbd> a mushroom or its label to visit it</li>
+              <li><kbd>H</kbd> hide the interface · <kbd>?</kbd> this help</li>
+            </ul>
+          </section>
+        </div>
+        <button class="btn primary" type="button" data-close>Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loader"><div class="spore"></div></div>
+  <script>
+    // If the app fails to start, say why on screen instead of showing a blank page.
+    (function () {
+      var shown = false;
+      function report(msg) {
+        if (shown) return;
+        shown = true;
+        var l = document.getElementById('loader');
+        if (!l) return;
+        l.className = '';
+        l.style.cssText = 'position:fixed;inset:0;z-index:99;display:grid;place-items:center;background:#04080a;color:#cfe0dd;font:14px/1.5 system-ui,sans-serif;padding:24px;text-align:center';
+        l.innerHTML = '<div style="max-width:560px"><b style="font-size:18px">The grove couldn’t start</b><p>' +
+          String(msg).replace(/</g, '&lt;') + '</p><p style="opacity:.6;font-size:12px">' + navigator.userAgent.replace(/</g, '&lt;') + '</p></div>';
+      }
+      window.addEventListener('error', function (e) { report((e.message || 'Script error') + (e.filename ? ' (' + e.filename.split('/').pop() + ':' + e.lineno + ')' : '')); });
+      window.addEventListener('unhandledrejection', function (e) { report(e.reason && e.reason.message || e.reason); });
+      setTimeout(function () {
+        var l = document.getElementById('loader');
+        if (l && !/done|fallback/.test(l.className) && !shown) report('Still loading after 15 seconds. The app script may have been blocked by an extension or failed to download.');
+      }, 15000);
+    })();
+  </script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+/* Playable CV additions on top of the Mycelia styles. */
+
+.status {
+  justify-self: center; padding: 8px 16px; border-radius: 999px; font-size: 13.5px; font-weight: 600; letter-spacing: 0.01em;
+  white-space: nowrap; max-width: 46vw; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- intro ---------- */
+#intro {
+  position: absolute; left: clamp(20px, 5vw, 72px); bottom: clamp(110px, 15vh, 160px); max-width: min(680px, 90vw);
+  transition: opacity 0.9s ease, transform 0.9s ease;
+}
+#intro.hidden { opacity: 0; transform: translateY(14px); pointer-events: none; }
+#intro h1 {
+  margin: 0; font-family: var(--display); font-weight: 600; font-size: clamp(34px, 5vw, 64px); line-height: 1; letter-spacing: -0.025em;
+  text-wrap: balance; color: #f2fffd; text-shadow: 0 0 28px rgba(53, 224, 216, 0.12), 0 18px 70px rgba(0, 0, 0, 0.5);
+}
+#intro em { font-style: normal; color: var(--ember); text-shadow: 0 0 12px rgba(200, 80, 10, 0.85), 0 0 42px rgba(150, 55, 5, 0.6); }
+#intro p { margin: 18px 0 0; max-width: 540px; font-size: clamp(16px, 1.8vw, 20px); line-height: 1.38; color: #d3e6e3; text-shadow: 0 8px 30px rgba(0, 0, 0, 0.6); }
+.intro-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.btn.big { height: 46px; padding: 0 20px; font-size: 15px; border-radius: 14px; }
+.btn.big kbd { opacity: 0.7; }
+body[data-tour="intro"] #dock { opacity: 0; pointer-events: none; }
+
+/* ---------- labels: buttons, so keyboard users can reach every stop ---------- */
+button.plabel { font: inherit; font-size: 13px; font-weight: 600; color: #e8f5f3; }
+.plabel .num { font-variant-numeric: tabular-nums; color: var(--dim); }
+
+/* ---------- card: larger type, readable from the back of a room ---------- */
+#card h2 { font-size: clamp(26px, 2.4vw, 34px); }
+#card .desc { font-size: clamp(15px, 1.2vw, 18px); }
+#card .meta { margin-top: 0; }
+.tag { color: var(--c, var(--accent)); }
+
+/* ---------- dock ---------- */
+.stops { gap: 2px; }
+.stop-chip {
+  display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: 0; border-radius: 9px; background: none;
+  cursor: pointer; color: var(--dim); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.stop-chip:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.stop-chip.on { color: var(--text); background: rgba(255, 255, 255, 0.12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.stop-chip.last { color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.stop-chip .dot { box-shadow: 0 0 8px currentColor; }
+
+/* ---------- no-WebGL fallback ---------- */
+#loader.fallback { display: block; overflow: auto; text-align: left; }
+.fallback-card { max-width: 620px; margin: 8vh auto; color: var(--text); font-size: 16px; line-height: 1.5; }
+.fallback-card h1 { font-family: var(--display); margin: 0 0 6px; }
+.fallback-card .dim { color: var(--dim); }
+.fallback-card li { margin: 0 0 14px; }
+.fallback-card a { color: var(--accent); }
+
+@media (max-width: 760px) {
+  .topbar { grid-template-columns: auto 1fr; }
+  .status { grid-column: 1 / -1; grid-row: 2; max-width: 90vw; }
+  .stop-chip .lbl { display: none; }
+  .stop-chip.on .lbl { display: inline; }
+  #intro { bottom: 110px; }
+}
