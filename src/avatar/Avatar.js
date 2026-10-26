@@ -74,7 +74,18 @@ export class Avatar {
     this.t = 0;
     this.acc = { x: 0, z: 0 };
     this.pv = { x: 0, z: 0 };
-    this.anim = { t: 0, dt: 0, walk: 0, phase: 0, run: 0, idle: 0, accX: 0, accZ: 0 };
+    this.anim = { t: 0, dt: 0, walk: 0, phase: 0, run: 0, idle: 0, accX: 0, accZ: 0, bored: 0, boredT: 0, calm: false };
+    // bored-at-a-stop: the mode sets boredTarget; the weight eases in slowly and out quickly
+    this.boredTarget = false;
+    this.bored = 0;
+    this.boredT = 0;
+    this.reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  }
+
+  /** Mode hook: the presenter has left the Gardener waiting long enough to get bored (or not). */
+  setBored(on) {
+    this.boredTarget = on;
+    if (on && this.pose === 'kneel') this.stand(); // bored at a project: he gets up from the mushroom
   }
 
   // ---- per frame --------------------------------------------------------------
@@ -183,6 +194,11 @@ export class Avatar {
     // animate
     const a = this.anim;
     a.t = this.t; a.dt = dt; a.walk = this.walkAmt; a.phase = this.phase; a.run = this.run; a.idle = this.idle;
+    const calm = !!this.reducedMotion?.matches;
+    const wantBored = this.boredTarget && this.pose === 'stand';
+    this.bored = damp(this.bored, wantBored ? 1 : 0, wantBored ? 1.2 : 6, dt);
+    if (this.bored < 0.005 && !wantBored) { this.bored = 0; this.boredT = 0; } else if (!calm) this.boredT += dt;
+    a.bored = this.bored; a.boredT = this.boredT; a.calm = calm;
     const cs = Math.cos(this.yaw), sn = Math.sin(this.yaw);
     a.accZ = clamp(this.acc.x * sn + this.acc.z * cs, -12, 12);
     a.accX = clamp(this.acc.x * cs - this.acc.z * sn, -12, 12);

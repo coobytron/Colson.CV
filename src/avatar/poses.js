@@ -51,6 +51,60 @@ export const KNEEL = {
   lid: 0,
 };
 
+/**
+ * Bored, standing: an understated 15 s loop layered on top of the standing pose. A constant slouch,
+ * then in turn: a glance out at the audience, a weight shift with a foot tap, a look at an invisible
+ * watch, a stretch, and a sigh. All additive, deterministic, and it fades with `k` (0..1).
+ * `calm` (reduced motion) keeps only a stable slouch with a tilted head: no looping movement.
+ */
+export const BORED_LOOP = 15;
+function boredLayer(add, I, t, k, calm) {
+  add[I.spine][0] += 0.13 * k;
+  add[I.neck][0] += 0.06 * k;
+  add[I.head][0] += 0.1 * k;
+  add[I.upperArmL][0] += 0.05 * k;
+  add[I.upperArmR][0] += 0.05 * k;
+  if (calm) { add[I.head][2] += 0.08 * k; return; }
+  const u = t % BORED_LOOP;
+  const win = (a, b, f = 0.6) => smoothstep(a, a + f, u) * (1 - smoothstep(b - f, b, u));
+
+  // glance out at the audience (1.0–3.8 s)
+  const g1 = win(1.0, 3.8);
+  const sweep = Math.sin(clamp((u - 1.0) / 2.8, 0, 1) * Math.PI * 2) * g1;
+  add[I.head][1] -= 0.55 * sweep * k;
+  add[I.neck][1] -= 0.2 * sweep * k;
+  add[I.head][0] -= 0.1 * g1 * k;
+
+  // shift weight and tap a foot (4.0–8.0 s)
+  const g2 = win(4.0, 8.0);
+  const tap = Math.max(0, Math.sin(u * 8)) * g2;
+  add[I.hips][2] += 0.05 * g2 * k;
+  add[I.spine][2] -= 0.04 * g2 * k;
+  add[I.thighR][0] -= 0.18 * tap * k;
+  add[I.shinR][0] += 0.14 * tap * k;
+
+  // glance at an invisible watch (8.5–11.5 s)
+  const g3 = win(8.5, 11.5, 0.5);
+  add[I.upperArmL][0] -= 0.95 * g3 * k;
+  add[I.forearmL][0] -= 1.25 * g3 * k;
+  add[I.head][0] += 0.22 * g3 * k;
+  add[I.head][1] += 0.35 * g3 * k;
+
+  // stretch, arms overhead (12.0–14.5 s)
+  const g4 = win(12.0, 14.5);
+  add[I.upperArmL][0] -= 2.7 * g4 * k;
+  add[I.upperArmR][0] -= 2.7 * g4 * k;
+  add[I.upperArmL][2] += 0.35 * g4 * k;
+  add[I.upperArmR][2] -= 0.35 * g4 * k;
+  add[I.spine][0] -= 0.42 * g4 * k;
+  add[I.head][0] -= 0.35 * g4 * k;
+
+  // sigh and slump (14.2–15 s)
+  const g5 = win(14.2, BORED_LOOP, 0.4);
+  add[I.spine][0] += 0.16 * g5 * k;
+  add[I.head][0] += 0.12 * g5 * k;
+}
+
 export const JOINTS = ['hips', 'spine', 'neck', 'head', 'upperArmL', 'forearmL', 'upperArmR', 'forearmR', 'thighL', 'shinL', 'thighR', 'shinR'];
 const POSE_LIST = [SIT_TYPE, { ...STAND, ...CARRY }, { ...KNEEL }];
 export const SIT = 0, STANDING = 1, KNEELING = 2;
@@ -91,6 +145,7 @@ export class Poser {
   /**
    * w: [sit, stand, kneel] weights (sum 1). o: { t, dt, walk, phase, run, idle, accX, accZ }
    * idle = standing-still weight (breathing + looking around).
+   * bored (0..1), boredT (s since boredom began), calm (reduced motion): the bored layer, standing only.
    */
   apply(w, o) {
     const add = this.add, I = this.idx;
@@ -114,8 +169,11 @@ export class Poser {
     add[I.neck][1] += 0.2 * look * o.idle;
     add[I.head][0] += 0.08 * Math.sin(t * 0.21) * o.idle;
 
-    // ---- walk / run cycle (driven by distance) ----
+    // ---- bored (only ever on the standing pose, never while walking) ----
     const wk = o.walk;
+    if (o.bored > 0.001) boredLayer(add, I, o.boredT, o.bored * w[STANDING] * (1 - Math.min(1, wk * 2)), o.calm);
+
+    // ---- walk / run cycle (driven by distance) ----
     if (wk > 0.001) {
       const ph = o.phase, sn = Math.sin(ph), r = o.run;
       const amp = 0.55 * (1 + 0.3 * r) * wk;

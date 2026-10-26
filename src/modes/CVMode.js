@@ -5,6 +5,7 @@ import { seededGenome } from '../mushroom/genome.js';
 import { hashString, mulberry32, clamp, smoothstep } from '../lib/math.js';
 import { heightAt } from '../world/terrain.js';
 import { findFreeSpot } from '../avatar/steer.js';
+import { BoredomClock, BOREDOM_SECONDS } from '../avatar/boredom.js';
 import { h, button, icon } from '../ui/dom.js';
 import { I } from '../ui/icons.js';
 import DATA from '../data/cv.js';
@@ -31,6 +32,7 @@ const _spot = new THREE.Vector2();
  *   tourMode        'intro' | 'guided' | 'free'
  *   presenterPaused true while the tab is hidden (presenter switched to another app)
  *   avatarAtStop    the Gardener has arrived and is standing at currentStop
+ *   bored           he has waited BOREDOM_SECONDS (180) at the current stop and is now visibly bored
  * Subscribe with onState(fn); fn(state, prev) runs after every change.
  */
 export class CVMode extends Mode {
@@ -41,7 +43,12 @@ export class CVMode extends Mode {
     this.byId = Object.fromEntries(this.stops.map((s) => [s.id, s]));
     this.projects = DATA.projects.map((p, index) => ({ ...p, index }));
     this.clearing = DATA.projectClearing;
-    this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false };
+    this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false, bored: false };
+    // 180 s by default. `?boredom=N` shortens it for local development only (stripped from production
+    // builds); tests set `cv.boredom.seconds` directly.
+    const dev = import.meta.env?.DEV ? Number(new URLSearchParams(location.search).get('boredom')) : 0;
+    this.boredom = new BoredomClock(dev > 0 ? dev : BOREDOM_SECONDS);
+    this.boredomHolds = new Set(); // reasons the boredom clock is held, e.g. 'handoff' (Local Lab, #4)
     this.listeners = [];
     this.travel = null; // { stop, attempts, then } while the tour is walking the Gardener somewhere
     this.cardStop = null;
@@ -61,6 +68,9 @@ export class CVMode extends Mode {
     document.body.dataset.tour = next.tourMode;
     for (const fn of this.listeners) fn(next, prev);
   }
+
+  /** Hold or release the boredom clock (the elapsed time is kept). Used for the Local Lab handoff. */
+  holdBoredom(reason, on = true) { if (on) this.boredomHolds.add(reason); else this.boredomHolds.delete(reason); }
 
   onState(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter((f) => f !== fn); }; }
 
@@ -174,6 +184,7 @@ export class CVMode extends Mode {
   goToStop(i) {
     const s = this.stops[clamp(i, 0, this.stops.length - 1)];
     if (!s) return;
+    this.boredom.reset(); // any explicit presenter action starts a fresh interval
     this.setState({ tourMode: 'guided', currentStop: s.id, avatarAtStop: false });
     this.openCard(s);
     const av = this.app.avatar;
@@ -221,6 +232,7 @@ export class CVMode extends Mode {
   /** Free Explore: the visitor drives; the tour remembers its stop. */
   explore() {
     this.travel = null;
+    this.boredom.reset();
     this.setState({ tourMode: 'free', avatarAtStop: false });
     this.closeCard();
     this.app.flyTo(new THREE.Vector3(0, 0.9, 0), { distance: 22, polar: 1.1, duration: 1.6 });
@@ -271,6 +283,7 @@ export class CVMode extends Mode {
   /** Open a project's card and send the Gardener over to kneel beside it. */
   selectProject(p) {
     this.travel = null;
+    this.boredom.reset();
     this.openProjectCard(p);
     this.app.avatar.walkTo(null, { kneelAt: p.marker });
     const c = this.clearing;
@@ -416,7 +429,43 @@ export class CVMode extends Mode {
     if (s && this.state.avatarAtStop && Math.hypot(av.position.x - s.stand.x, av.position.z - s.stand.z) > AT_STOP * 1.6) {
       this.setState({ avatarAtStop: false });
     }
+    this.updateBoredom(dt, av);
     this.updateLabels();
+  }
+
+  /**
+   * Which stop is the Gardener waiting at, and has he arrived and stopped there? Career stops count
+   * once he has walked to the stand point; a project counts once he is beside it (kneeling, or standing
+   * after boredom got him up). Free Explore and the intro never arm the clock.
+   */
+  boredomTarget(av) {
+    const { tourMode, currentStop, avatarAtStop } = this.state;
+    if (tourMode !== 'guided' || !currentStop) return { key: null, settled: false };
+    const noInput = !av.path && !Object.values(av.keys).some(Boolean);
+    const still = noInput && av.walkAmt < 0.05;
+    const p = this.cardProject;
+    if (p) {
+      // getting up from the mushroom makes the steering ease him a step clear of its cap: that drift is
+      // not the presenter's doing, so once boredom has begun only real input (a path, WASD) ends it
+      const near = Math.hypot(av.position.x - p.x, av.position.z - p.z) < 2.2;
+      const calm = this.boredom.bored ? noInput : still;
+      return { key: `project:${p.id}`, settled: near && calm && (av.pose === 'kneel' || av.pose === 'stand') };
+    }
+    return { key: `career:${currentStop}`, settled: avatarAtStop && still && av.pose === 'stand' };
+  }
+
+  updateBoredom(dt, av) {
+    const { key, settled } = this.boredomTarget(av);
+    const paused = this.state.presenterPaused || this.boredomHolds.size > 0;
+    const bored = this.boredom.update(dt, { key, settled, paused });
+    av.setBored(bored);
+    // the gag is only worth it if the room can see it: ease the camera in on him as it begins
+    if (bored && !this.state.bored) {
+      const t = _v.set(av.position.x, av.position.y + 1.0, av.position.z);
+      if (this.app.follow === av) this.app.follow = null;
+      this.app.flyTo(t.clone(), { distance: 4.4, polar: 1.3, duration: 3 });
+    }
+    this.setState({ bored });
   }
 
   updateLabels() {

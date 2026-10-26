@@ -2,14 +2,15 @@
   "name": "colson-cv",
   "version": "0.1.0",
   "private": true,
-  "description": "Colson Knight’s playable CV: the Mycelia 2 grove and Gardener, one stop per chapter.",
+  "description": "Colson Knight\u2019s playable CV: the Mycelia 2 grove and Gardener, one stop per chapter.",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "qa": "node scripts/qa.mjs"
+    "qa": "node scripts/qa.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "three": "^0.180.0"

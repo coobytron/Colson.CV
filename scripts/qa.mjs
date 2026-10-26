@@ -191,6 +191,93 @@ async function run(base, [w, hgt]) {
   const jump = await arriveAt(page, stops[2]);
   check(`${tag} number key jumps to stop 3`, jump.arrived);
 
+  // ---- boredom (#3): default 180 s; tests shorten `cv.boredom.seconds` ----
+  const cvState = () => page.evaluate(() => {
+    const { cv, app } = window.colsonCV;
+    const av = app.avatar;
+    return { ...cv.state, elapsed: cv.boredom.elapsed, seconds: cv.boredom.seconds, weight: av.bored, boredT: av.boredT, pose: av.pose };
+  });
+  const waitFor = async (fn, ms = 120000) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) { const v = await fn(); if (v) return v; await sleep(250); }
+    return null;
+  };
+  const settle = async (id) => { const r = await arriveAt(page, id); await sleep(500); return r.arrived; };
+  const shorten = (secs) => page.evaluate((n) => { const c = window.colsonCV.cv.boredom; c.seconds = c.elapsed + n; }, secs);
+
+  await page.keyboard.press('3');
+  await settle(stops[2]);
+  await sleep(6000);
+  const b0 = await cvState();
+  check(`${tag} boredom default is 180 s and the clock runs while he waits`, b0.seconds === 180 && b0.elapsed > 1 && !b0.bored, `${b0.elapsed.toFixed(1)} s of ${b0.seconds}`);
+  for (let i = 0; i < 8; i++) { await page.mouse.move(200 + i * 90, 300 + (i % 3) * 60); await sleep(150); }
+  const b1 = await cvState();
+  check(`${tag} incidental mouse movement does not reset the clock`, b1.elapsed > b0.elapsed, `${b0.elapsed.toFixed(1)} → ${b1.elapsed.toFixed(1)}`);
+
+  // pause: Local Lab handoff and a hidden tab hold the clock, keep the elapsed time, and never fire
+  await shorten(6);
+  await page.evaluate(() => window.colsonCV.cv.holdBoredom('handoff', true));
+  const h0 = await cvState();
+  await sleep(9000);
+  const h1 = await cvState();
+  check(`${tag} Local Lab handoff holds the clock`, !h1.bored && Math.abs(h1.elapsed - h0.elapsed) < 0.3, `${h0.elapsed.toFixed(2)} → ${h1.elapsed.toFixed(2)}`);
+  await page.evaluate(() => { window.colsonCV.cv.holdBoredom('handoff', false); window.colsonCV.cv.setState({ presenterPaused: true }); });
+  await sleep(8000);
+  const h2 = await cvState();
+  check(`${tag} a hidden tab holds the clock`, !h2.bored && Math.abs(h2.elapsed - h1.elapsed) < 0.3, `${h1.elapsed.toFixed(2)} → ${h2.elapsed.toFixed(2)}`);
+  await page.evaluate(() => window.colsonCV.cv.setState({ presenterPaused: false }));
+  const fired = await waitFor(async () => (await cvState()).bored);
+  const bd = await cvState();
+  check(`${tag} resuming does not misfire; boredom starts once the interval is used up`, !!fired && bd.elapsed + 0.5 >= bd.seconds, `${bd.elapsed.toFixed(1)} of ${bd.seconds}`);
+  check(`${tag} bored: still at the stop, standing, no auto-advance`, bd.currentStop === stops[2] && bd.avatarAtStop && bd.pose === 'stand', `stop ${bd.currentStop}, pose ${bd.pose}`);
+
+  // a frame strip across the 15 s loop, for visual review
+  for (const [i, at] of [2.5, 6, 9.8, 13, 14.7].entries()) {
+    await waitFor(async () => (await cvState()).boredT >= at, 30000);
+    await shot(`40-bored-${i + 1}`);
+  }
+  const loop1 = await cvState();
+  check(`${tag} the bored animation is eased in and stays at the stop`, loop1.weight > 0.95 && loop1.bored && loop1.currentStop === stops[2], `weight ${loop1.weight.toFixed(2)}`);
+
+  // reduced motion: a stable pose instead of the looping gestures
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await sleep(500);
+  const r0 = await cvState();
+  await sleep(2500);
+  const r1 = await cvState();
+  check(`${tag} reduced motion freezes the loop but keeps the bored pose`, r1.bored && r1.weight > 0.9 && Math.abs(r1.boredT - r0.boredT) < 0.01, `boredT ${r0.boredT.toFixed(2)} → ${r1.boredT.toFixed(2)}`);
+  await shot('41-bored-reduced-motion');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+  // meaningful action: walking clears it at once, he fades back to attentive, and a revisit starts afresh
+  await page.keyboard.down('KeyD');
+  await sleep(1200);
+  await page.keyboard.up('KeyD');
+  const w0 = await cvState();
+  check(`${tag} moving clears boredom immediately`, !w0.bored && w0.elapsed === 0 && w0.weight < 0.5, `bored ${w0.bored}, weight ${w0.weight.toFixed(2)}`);
+  await page.keyboard.press('n');
+  await settle(stops[3]);
+  await page.keyboard.press('b');
+  await settle(stops[2]);
+  const w1 = await cvState();
+  check(`${tag} revisiting a stop starts a fresh interval`, !w1.bored && w1.elapsed < 10 && w1.seconds > 0, `${w1.elapsed.toFixed(1)} s`);
+
+  // a project stop: bored while kneeling at a mushroom makes him stand up beside it
+  await page.keyboard.press('5');
+  await settle(stops[4]);
+  await page.keyboard.press('e');
+  await waitFor(async () => (await cvState()).pose === 'kneel', 60000);
+  await sleep(1500);
+  await shorten(6);
+  const pb = await waitFor(async () => (await cvState()).bored);
+  await sleep(2500);
+  const p1 = await cvState();
+  check(`${tag} bored at a project: he stands up beside it`, !!pb && p1.pose === 'stand' && p1.weight > 0.5, `pose ${p1.pose}, weight ${p1.weight.toFixed(2)}`);
+  await shot('42-bored-project');
+  await page.keyboard.press('f');
+  await sleep(1000);
+  check(`${tag} Free Explore is never bored`, !(await cvState()).bored);
+
   const draws = await page.evaluate(() => window.colsonCV.app.renderer.info.render.calls);
   check(`${tag} console clean`, errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();
