@@ -20,8 +20,8 @@ function webglAvailable() {
 function listCard({ projects = false } = {}) {
   return h('div', { class: 'fallback-card' },
     h('h1', { id: 'listTitle' }, DATA.name), h('p', { class: 'dim' }, `${DATA.role}. Career stops, in order.`),
-    h('ol', {}, ...DATA.stops.map((s) => h('li', {},
-      h('b', {}, s.label), ' ', h('span', { class: 'dim' }, s.dates), h('br'), s.summary,
+    h('ul', { class: 'stops' }, ...DATA.stops.map((s) => h('li', {},
+      h('b', {}, s.label), ' ', h('span', { class: 'when' }, s.dates), h('br'), s.summary,
       s.skills.length ? [h('br'), h('span', { class: 'dim' }, `Skills added: ${s.skills.join(', ')}.`)] : null,
       ...s.links.map((k) => [' ', h('a', { href: k.href, target: '_blank', rel: 'noopener' }, k.label)])))),
     projects ? h('h2', {}, 'Experiments') : null,
