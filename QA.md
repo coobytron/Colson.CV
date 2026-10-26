@@ -27,7 +27,7 @@ Run in headless Chromium with software rendering, at **1440 × 900** and **1920 
 
 None of this can be checked from a build session. In rough order:
 
-1. **Turn on Pages** (Settings → Pages → Source → GitHub Actions), then check the live URL: `https://coobytron.github.io/Colson.CV/`. Until then every deploy fails at `configure-pages`.
+1. **Pages source = GitHub Actions** (Settings → Pages → Build and deployment → Source; not *Deploy from a branch*), then check the live URL: `https://coobytron.github.io/Colson.CV/`. With the wrong source the workflow fails at `configure-pages`, and the site is served unbuilt through the CDN import map (it works, but it needs the network). Check the live page really is the built one: its `<script src>` should point into `assets/`, not `src/main.js`.
 2. **Open it on the real projector or display**, at its real resolution, in **Chrome and Safari**. QA only ran Chromium, in software. Check the frame rate and that nothing stutters on the Gardener's walks.
 3. **Run the smoke route with your clicker** (PageDown / PageUp should work).
 4. **A real Cmd-Tab at the Local Lab.** Switch to Finder, open one of your Metal shaders, come back. Check the scene is exactly as you left it and the card says Welcome back. QA simulates blur and focus events, not a real app switch.
