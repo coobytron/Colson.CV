@@ -13,6 +13,7 @@ It's built to sit behind a live talk. The tour moves only when the presenter say
 | **N** / **PageDown** / **]** | next stop |
 | **B** / **PageUp** / **[** | previous stop |
 | **1**–**6** | jump to a stop |
+| **Q** / **E** | browse the featured projects (from the Experiments stop, a project card, or Free Explore) |
 | **F** | Free Explore (press again, or **G**, to return to the tour) |
 | **Enter** | begin the tour from the start screen |
 | **WASD** / arrows, **Shift**, **C** | walk, run, sit (the original Mycelia controls) |
@@ -47,7 +48,13 @@ Software GL renders only a few frames a second, so QA loads the page with `?qual
 
 While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle behaviour (auto-sit after 6 s, wander home after 40 s). He stays standing at the stop for as long as the presenter talks. Free Explore brings that behaviour back. If a walk gets blocked, the tour tries once from another side, then frames the stop anyway.
 
-Stop data lives in [`src/data/cv.js`](src/data/cv.js). The copy is intentionally brief, and details that still need confirming are listed in each stop's `unconfirmed` field. Project mushrooms and fuller stop data are tracked in issue #2.
+## Content
+
+[`src/data/cv.js`](src/data/cv.js) holds all of it.
+- **Career stops** are walked in `presentationOrder`. The copy is intentionally brief, and anything awaiting confirmation goes in a stop's `unconfirmed` field.
+- **Featured projects** grow in a clearing behind the Experiments stop. The Experiments card lists them as buttons, so you don't need to hit a mushroom precisely.
+- **Project links:** a project card shows **Open demo** only for a `demoLink` that has been checked to load. Otherwise it says *Live on Colson's Mac* (`availability: 'local'`) or *No public link yet*.
+- **Repos:** `repoLink` stays `null` unless the repo is confirmed public. Never put a private repo URL there.
 
 ## Deploy
 
