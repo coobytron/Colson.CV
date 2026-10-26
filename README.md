@@ -4,14 +4,19 @@ Colson Knight's CV as a small game. The Gardener from [Mycelia 2](https://github
 
 1. **CBU** · 2. **Freelance** · 3. **VICE** · 4. **Apple** · 5. **Experiments** · 6. **Local Lab**
 
-The walk is the story: each chapter adds skills, and its garden grows from them. CBU is one small mushroom; Freelance a small, varied cluster; VICE taller and more expressive; Apple a refined garden in ordered rows; Experiments the largest, densest grove, ringing the featured projects. Each garden's dates hang over it in the world, so the timeline reads from the projected view, and each chapter card lists the skills that chapter added. The gardens are grown from data profiles in `src/data/cv.js` (`garden`) by `src/world/garden.js`, deterministically, keeping every stand point, walk and project clear.
+The walk is the story: each chapter adds skills, and its garden grows from them. CBU is one small mushroom; Freelance a small, varied cluster; VICE taller and more expressive; Apple a refined garden in ordered rows; Experiments the largest, densest grove, ringing the featured projects. Each garden's dates hang over it in the world, so the timeline reads from the projected view, and each chapter card lists the skills that chapter added. Every skill is also a mushroom: it sprouts beside its chapter's marker, wearing its name, when the Gardener gets there, and stays grown for the rest of the walk. VICE and Apple have their logos floating, glowing, over their markers (glow masks made from the logos in `docs/logos/`; add another with a `logo` key in `src/data/cv.js` and an entry in `src/world/logos.js`). The Experiments are Balloon Type Field, MiloPop, Visual Creature Compiler and StressType. The gardens are grown from data profiles in `src/data/cv.js` (`garden`) by `src/world/garden.js`, deterministically, keeping every stand point, walk and project clear.
 
 It's built to sit behind a live talk. The tour moves only when the presenter says so, and visitors can wander freely afterwards.
+
+## Presentation mode
+
+**P**, the **Present** button (start screen or top right), or `?present` in the URL. The screen keeps just the grove, the card, two big arrows and a progress bar. **→** / **←**, the arrows, a clicker (PageDown / PageUp) or Space step through every section: the five chapters, each experiment in turn after Experiments, then the Local Lab. The Gardener still walks each hop, boredom and the Local Lab handoff work as usual, and the dots on the progress bar jump straight to a section. **P** or **Esc** leaves it on the same stop.
 
 ## Controls
 
 | | |
 | --- | --- |
+| **P** | presentation mode on / off (above) |
 | **N** / **PageDown** / **]** | next stop |
 | **B** / **PageUp** / **[** | previous stop |
 | **1**–**6** | jump to a stop |
@@ -39,7 +44,7 @@ npm run smoke    # just the staged classroom route (below), on a fresh page
 npm run qa       # build, then drive the tour in headless Chromium; screenshots + report in .shots/
 ```
 
-`npm run qa` runs at 1440×900 and 1920×1080. It checks that every stop is reached by walking, not teleporting; that the Gardener holds his place at a stop when left alone; that there's no auto-advance; that Free Explore and back keeps the tour's place; that number-key jumps work; and that the console stays clean. The career section (`--only chapters`) captures every chapter and a wide view of the whole timeline, and checks each date label is shown over its garden, brightest at the current stop and clear of the card and every label; that each card lists exactly its chapter's skills; that the gardens grow chapter by chapter; and that the Gardener can walk to and kneel at every project. Add `--skip-build` to reuse `dist/`, or `--sizes 1440x900` for a single size.
+`npm run qa` runs at 1440×900 and 1920×1080. It checks that every stop is reached by walking, not teleporting; that the Gardener holds his place at a stop when left alone; that there's no auto-advance; that Free Explore and back keeps the tour's place; that number-key jumps work; and that the console stays clean. The career section (`--only chapters`) captures every chapter and a wide view of the whole timeline, and checks each date label is shown over its garden, brightest at the current stop and clear of the card and every label; that each card lists exactly its chapter's skills; that the gardens grow chapter by chapter; that each chapter's skills grow in as named mushrooms on arrival (earlier chapters' stay grown, later ones' aren't yet); that the VICE and Apple logos float lit over their markers, on screen and clear of the date; that standing still, every label holds perfectly still; and that the Gardener can walk to and kneel at every project. `--only present` steps through every section of presentation mode with the arrow keys, the on-screen arrows, PageUp and the progress dots. Add `--skip-build` to reuse `dist/`, or `--sizes 1440x900` for a single size.
 
 Software GL renders only a few frames a second, so QA loads the page with `?quality=low&timescale=6`. `timescale` is a test/dev-only URL parameter that runs N simulation steps per rendered frame. It doesn't change anything for a normal visitor.
 
@@ -55,6 +60,7 @@ Software GL renders only a few frames a second, so QA loads the page with `?qual
 | `avatarAtStop` | the Gardener has arrived and is standing at `currentStop` |
 | `bored` | he has waited 180 s at the current stop (see below) |
 | `labPhase` | the Local Lab beat: `idle`, `sitting`, `speaking`, `handoff`, `away` or `back` (see below) |
+| `present` | presentation mode is on (see above) |
 
 While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle behaviour (auto-sit after 6 s, wander home after 40 s). He stays standing at the stop for as long as the presenter talks. Free Explore brings that behaviour back. If a walk gets blocked, the tour tries once from another side, then frames the stop anyway.
 

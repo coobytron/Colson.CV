@@ -40,7 +40,7 @@ export class TimelineLabels {
       const anchor = new THREE.Vector3(s.centre.x, y + s.top + LIFT, s.centre.z);
       const ground = new THREE.Vector3(s.centre.x, y + s.top * 0.6, s.centre.z);
       const peak = new THREE.Vector3(s.centre.x, y + s.top, s.centre.z);
-      return { s, el, anchor, ground, peak, alpha: 0, size: null };
+      return { s, el, anchor, ground, peak, alpha: 0, size: null, last: null, at: null }; // last: offset kept from the ideal spot
     });
   }
 
@@ -71,6 +71,8 @@ export class TimelineLabels {
     }
     const avoid = [];
     for (const s of [...cv.stops, ...cv.projects]) if (s.screen) avoid.push({ x: s.screen.x - s.screen.w / 2, y: s.screen.y - s.screen.h, w: s.screen.w, h: s.screen.h });
+    avoid.push(...(cv.skillScreens ?? []));
+    for (const logo of cv.logos ?? []) { const r = logo.screenRect(app); if (r) avoid.push(r); }
     const av = app.avatar;
     const head = app.toScreen(_v.set(av.position.x, av.position.y + 1.0, av.position.z));
     const foot = app.toScreen(_g.set(av.position.x, av.position.y, av.position.z));
@@ -102,12 +104,17 @@ export class TimelineLabels {
         // try below instead; if nothing is free, recede
         const top = TOP_SAFE * zoom + size.h;
         const free = (yy) => { const r = { x: x - size.w / 2, y: yy - size.h, w: size.w, h: size.h }; return ![...avoid, ...placed].some((o) => overlap(r, o)); };
-        let spot = null;
+        // keep last frame's spot while it's still free: without this a label can hop between two equally good
+        // spots from one frame to the next, which reads as a glitch while nothing else moves
+        // (kept as an offset from the ideal spot, so it still follows the garden as the camera moves)
+        const kept = it.last === null ? null : y + it.last;
+        let spot = kept !== null && kept >= top && kept < innerHeight - 120 * zoom && free(kept) ? kept : null;
         for (let k = 0; k <= STEPS && spot === null; k++) {
           for (const yy of k ? [y - size.h * NUDGE * k, y + size.h * NUDGE * k] : [y]) {
             if (yy >= top && yy < innerHeight - 120 * zoom && free(yy)) { spot = yy; break; }
           }
         }
+        it.last = spot === null ? null : spot - y;
         if (spot === null) want *= 0.2; else y = spot;
         // behind the card: step out to its left if there's room (the Local Lab's close-up), else recede
         const cardBox = card && { x: card.left, y: card.top, w: card.width, h: card.height };
@@ -121,7 +128,11 @@ export class TimelineLabels {
         placed.push(r);
       }
       it.alpha = damp(it.alpha, want, 4, dt);
-      if (it.alpha < 0.02) { el.style.visibility = 'hidden'; continue; }
+      if (it.alpha < 0.02) { el.style.visibility = 'hidden'; it.at = null; continue; }
+      // glide to a new spot rather than jump; a fresh label appears where it belongs
+      if (!it.at) it.at = { x, y };
+      else if (want > 0) { it.at.x = damp(it.at.x, x, 10, dt); it.at.y = damp(it.at.y, y, 10, dt); } // fading out: stay put
+      ({ x, y } = it.at);
       el.style.visibility = 'visible';
       el.style.opacity = it.alpha.toFixed(2);
       el.classList.toggle('current', current);

@@ -140,7 +140,7 @@ export class Mushroom {
     else this.appear = damp(this.appear, this.appearTarget, this.appearTarget > this.appear ? 5 : 9, dt);
     const ap = this.appearTarget > 0 ? easeOutBack(clamp(this.appear)) : clamp(this.appear);
     this.group.scale.setScalar(Math.max(0.0001, this.scale * ap));
-    this.group.visible = this.appear > 0.01;
+    this.group.visible = this.appear > 0.01 && this.grow > 0.004; // an ungrown mushroom is not a dot on the ground
 
     // spring physics — world wind converted into the mushroom's local frame
     env.windAt(this.x, this.z, _w);
@@ -183,10 +183,12 @@ export class Mushroom {
     return out.set((dx * cs - dz * sn) / h, (dx * sn + dz * cs) / h);
   }
 
-  capWorldPosition(out = new THREE.Vector3()) {
+  /** The cap top in world space. `still` ignores the wind sway: a steady anchor for screen labels. */
+  capWorldPosition(out = new THREE.Vector3(), { still = false } = {}) {
     const o = this.info.capOrigin;
     const g = Math.max(0.05, this.grow);
-    out.set(o.x + this.bend.x * o.y * g, this.info.capTop * g, o.z + this.bend.y * o.y * g);
+    const bx = still ? 0 : this.bend.x, bz = still ? 0 : this.bend.y;
+    out.set(o.x + bx * o.y * g, this.info.capTop * g, o.z + bz * o.y * g);
     return this.group.localToWorld(out);
   }
 

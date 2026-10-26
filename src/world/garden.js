@@ -7,6 +7,9 @@ import { hashString, mulberry32, lerp, clamp } from '../lib/math.js';
 /** Rough ground footprint of a companion mushroom at this scale (most strains have a cap radius ≤ 0.85). */
 export const footprint = (scale) => 0.72 * scale + 0.08;
 
+/** Scale of a skill mushroom: one per skill the chapter added, grown in beside its marker as it's gained. */
+export const SKILL_SCALE = 0.5;
+
 /** Shortest distance from (x, z) to the segment a→b. */
 export function segmentDistance(x, z, a, b) {
   const dx = b.x - a.x, dz = b.z - a.z;
@@ -22,12 +25,14 @@ export function segmentDistance(x, z, a, b) {
  *   keep      { discs: [{ x, z, r }], paths: [{ a, b, r }] }   ground that has to stay clear
  *   around    optional { x, z, r0, r1 }: grow in this annulus instead of fanning out behind the marker
  *             (the Experiments garden rings the project clearing)
- * Returns [{ x, z, scale, strain, seed }].
+ *   skills    optional string[]: one skill mushroom each, placed first, flanking the marker where the stop's
+ *             camera sees them (they grow in as the chapter is reached; see CVMode.growSkills)
+ * Returns [{ x, z, scale, strain, seed, skill? }]: the skill mushrooms first, then the companions.
  */
-export function layoutGarden(stop, profile, { keep = { discs: [], paths: [] }, around = null } = {}) {
+export function layoutGarden(stop, profile, { keep = { discs: [], paths: [] }, around = null, skills = [] } = {}) {
   const out = [];
   const n = profile.count ?? 0;
-  if (!n) return out;
+  if (!n && !skills.length) return out;
   const rng = mulberry32(hashString(`garden:${stop.id}`));
   const back = Math.atan2(-stop.dir.z, -stop.dir.x);
   const [r0, r1] = profile.ring;
@@ -37,7 +42,8 @@ export function layoutGarden(stop, profile, { keep = { discs: [], paths: [] }, a
   const order = strains.map((s) => ({ s, k: rng() })).sort((p, q) => p.k - q.k).map((o) => o.s);
 
   const clear = (x, z, r) => {
-    if (Math.hypot(x - stop.x, z - stop.z) < r + 0.55) return false; // the marker itself
+    // the marker's own cap: nothing grows under it, so no two caps cut through each other as they sway
+    if (Math.hypot(x - stop.x, z - stop.z) < r + footprint(profile.marker)) return false;
     for (const d of keep.discs) if (d.marker !== stop.id && Math.hypot(x - d.x, z - d.z) < d.r + r) return false;
     for (const p of keep.paths) if (segmentDistance(x, z, p.a, p.b) < p.r + r) return false;
     for (const m of out) if (Math.hypot(x - m.x, z - m.z) < (footprint(m.scale) + r) * 0.82) return false;
@@ -47,6 +53,7 @@ export function layoutGarden(stop, profile, { keep = { discs: [], paths: [] }, a
   // candidate i: where it would like to grow (t = 0 near the marker / inner edge, 1 at the far edge)
   const candidate = (i, tries) => {
     const jitter = Math.min(1, tries / 12);
+    const reach = 1.5 * clamp((tries - 60) / 240); // a crowded garden may spill a little further out
     if (around) {
       const a = rng() * Math.PI * 2;
       const t = Math.sqrt(rng());
@@ -59,17 +66,38 @@ export function layoutGarden(stop, profile, { keep = { discs: [], paths: [] }, a
       const t = rows > 1 ? row / (rows - 1) : 0;
       const u = inRow > 1 ? col / (inRow - 1) - 0.5 : 0;
       const a = back + u * profile.spread * (0.75 + 0.25 * t) + (rng() - 0.5) * 0.25 * jitter;
-      const r = lerp(r0, r1, t) + (rng() - 0.5) * 0.3 * jitter;
+      const r = lerp(r0, r1, t) + (rng() - 0.5) * 0.3 * jitter + reach * rng();
       return { x: stop.x + Math.cos(a) * r, z: stop.z + Math.sin(a) * r, t, u };
     }
-    const a = back + (rng() - 0.5) * profile.spread;
+    const a = back + (rng() - 0.5) * profile.spread * (1 + reach * 0.3);
     const t = Math.sqrt(rng());
-    const r = lerp(r0, r1, t);
+    const r = lerp(r0, r1 + reach, t);
     return { x: stop.x + Math.cos(a) * r, z: stop.z + Math.sin(a) * r, t };
   };
 
+  // the skills: alternating either side of the marker, working back from the side nearest the Gardener
+  const front = Math.atan2(stop.dir.z, stop.dir.x);
+  const inner = footprint(profile.marker) + footprint(SKILL_SCALE) + 0.15;
+  skills.forEach((skill, i) => {
+    const prefer = i % 2 ? -1 : 1, j = Math.floor(i / 2);
+    for (let tries = 0; tries < 200; tries++) {
+      const jitter = Math.min(1, tries / 16);
+      let x, z;
+      if (tries < 100) {
+        const wide = clamp((tries - 40) / 60); // a crowded marker lets them wander further round and out,
+        const side = tries > 60 && rng() < 0.5 ? -prefer : prefer; // or to its other side
+        const a = front + side * (1.75 + 0.42 * j + (rng() - 0.3) * (0.9 + 1.2 * wide) * jitter);
+        const r = inner + 0.1 * j + rng() * (1.1 + 1.6 * wide) * jitter;
+        x = stop.x + Math.cos(a) * r; z = stop.z + Math.sin(a) * r;
+      } else ({ x, z } = candidate(i, tries - 100)); // no room beside the marker: join the garden behind it
+      if (!clear(x, z, footprint(SKILL_SCALE))) continue;
+      out.push({ x, z, scale: SKILL_SCALE, strain: stop.strain, seed: hashString(`${stop.id}:skill:${i}`), skill });
+      break;
+    }
+  });
+
   for (let i = 0; i < n; i++) {
-    for (let tries = 0; tries < 120; tries++) {
+    for (let tries = 0; tries < 360; tries++) {
       const c = candidate(i, tries);
       // farther out grows larger, so the garden rises from its marker; ordered rows peak at their middle
       const lift = profile.rows ? 1 - Math.abs(c.u ?? 0) * 0.5 : 0.75 + c.t * 0.5;
@@ -95,6 +123,15 @@ function rowSlot(i, n, rows, r0, r1) {
   let row = 0;
   while (row < rows - 1 && i >= counts[row]) i -= counts[row++];
   return { row, col: i, inRow: counts[row], rows };
+}
+
+/**
+ * Do two caps cut through each other? Each is { x, z, r, y0, y1 }: the cap's centre on the ground, its radius
+ * and its height band. `margin` leaves room for both to sway in the wind without touching.
+ */
+export function capsOverlap(a, b, margin = 0.12) {
+  if (Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) < -margin) return false; // one cap is clear above the other
+  return Math.hypot(a.x - b.x, a.z - b.z) < a.r + b.r + margin;
 }
 
 /** Where a chapter's date hangs: over the middle of its grove (marker plus companions, weighted by size). */
@@ -134,9 +171,9 @@ export function keepClear(stops, clearing, { home, wideStand = null }) {
   return { discs, paths };
 }
 
-/** All of a chapter's companions; the Experiments garden rings the project clearing behind its marker. */
+/** All of a chapter's mushrooms (its skills, then its companions); the Experiments garden rings the project clearing behind its marker. */
 export function growGarden(s, clearing, keep) {
   const g = s.garden;
   const around = s.id === clearing.stop ? { x: clearing.x, z: clearing.z, r0: clearing.r + g.ring[0], r1: clearing.r + g.ring[1] } : null;
-  return layoutGarden(s, g, { keep, around });
+  return layoutGarden(s, g, { keep, around, skills: s.skills ?? [] });
 }

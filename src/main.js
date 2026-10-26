@@ -2,7 +2,7 @@ import { App } from './app.js';
 import { CVMode, UI_SCALES } from './modes/CVMode.js';
 import { Avatar } from './avatar/Avatar.js';
 import { createAmbient } from './world/ambient.js';
-import { h, button } from './ui/dom.js';
+import { h, button, icon } from './ui/dom.js';
 import { I } from './ui/icons.js';
 import DATA from './data/cv.js';
 
@@ -74,6 +74,7 @@ function boot() {
   intro.querySelector('[data-list]').addEventListener('click', () => list.open());
   intro.querySelector('[data-begin]').addEventListener('click', () => cv.begin());
   intro.querySelector('[data-explore]').addEventListener('click', () => cv.explore());
+  intro.querySelector('[data-present]').addEventListener('click', () => cv.setPresent(true));
   cv.onState((s) => intro.classList.toggle('hidden', s.tourMode !== 'intro'));
 
   // ---- status pill: where the tour is ----
@@ -100,9 +101,11 @@ function boot() {
   const smaller = button({ label: 'A−', title: 'Smaller text (−)', cls: 'small ghost', onClick: () => cv.nudgeScale(-1) });
   const bigger = button({ label: 'A+', title: 'Larger text (+)', cls: 'small ghost', onClick: () => cv.nudgeScale(1) });
   const full = button({ label: 'Full', title: 'Fullscreen', cls: 'small ghost', onClick: () => cv.toggleFullscreen() });
+  const presentBtn = button({ label: 'Present', title: 'Presentation mode: just previous / next arrows (P)', cls: 'small ghost present-btn', onClick: () => cv.togglePresent() });
   smaller.setAttribute('aria-label', 'Smaller text');
   bigger.setAttribute('aria-label', 'Larger text');
   cv.onView((v) => {
+    presentBtn.querySelector('.lbl').textContent = cv.state.present ? 'Exit' : 'Present';
     labelsBtn.setAttribute('aria-pressed', String(v.labels));
     cardBtn.setAttribute('aria-pressed', String(v.card));
     smaller.disabled = v.scale <= UI_SCALES[0];
@@ -110,7 +113,7 @@ function boot() {
   });
   actions.classList.add('presenter');
   actions.append(
-    labelsBtn, cardBtn, smaller, bigger, full,
+    presentBtn, labelsBtn, cardBtn, smaller, bigger, full,
     button({ icon: I.eye, title: 'Hide interface (H)', cls: 'icon ghost', onClick: () => toggleUi() }),
     button({ icon: I.help, title: 'Controls (?)', cls: 'icon ghost', onClick: () => toggleHelp() }),
   );
@@ -127,6 +130,24 @@ function boot() {
     }
   };
   document.getElementById('toast').addEventListener('click', () => document.body.classList.remove('ui-hidden'));
+
+  // ---- presentation mode: two big arrows and where you are, nothing else ----
+  const presenter = document.getElementById('presenter');
+  const prevArrow = h('button', { type: 'button', class: 'parrow prev', 'aria-label': 'Previous section', title: 'Previous section (← / PageUp)', onclick: () => cv.stepSection(-1) }, icon(I.prev));
+  const nextArrow = h('button', { type: 'button', class: 'parrow next', 'aria-label': 'Next section', title: 'Next section (→ / PageDown)', onclick: () => cv.stepSection(1) }, icon(I.next));
+  const dots = cv.sections.map((x, i) => h('button', { type: 'button', class: `pdot${x.kind === 'project' ? ' sub' : ''}`, style: { '--c': x.color }, 'aria-label': `Go to ${x.label}`, title: x.label, onclick: () => cv.goToSection(i) }));
+  const where = h('span', { class: 'pwhere' });
+  presenter.append(prevArrow, nextArrow, h('div', { class: 'pbar glass' }, h('div', { class: 'pdots' }, ...dots), where,
+    h('button', { type: 'button', class: 'btn small ghost', title: 'Leave presentation mode (P)', onclick: () => cv.setPresent(false) }, 'Exit')));
+  cv.onSectionChange = () => {
+    const i = cv.sectionIndex, list = cv.sections;
+    dots.forEach((d, k) => { d.classList.toggle('on', k === i); d.classList.toggle('done', k < i); if (k === i) d.setAttribute('aria-current', 'step'); else d.removeAttribute('aria-current'); });
+    where.textContent = i < 0 ? 'Ready' : `${list[i].label} · ${i + 1} / ${list.length}`;
+    prevArrow.disabled = i <= 0;
+    nextArrow.disabled = i >= list.length - 1;
+  };
+  cv.onState((st, prev) => { if (st.present !== prev.present) presenter.hidden = !st.present; });
+  cv.onSectionChange();
 
   // ---- keyboard ----
   window.addEventListener('keydown', (e) => {
@@ -145,12 +166,13 @@ function boot() {
   app.setMode('cv');
   app.start();
 
-  // deep link: #apple starts the tour at that stop
+  // deep link: #apple starts the tour at that stop; ?present opens in presentation mode
   const deep = () => { const s = cv.byId[location.hash.slice(1)]; if (s) cv.goToStop(s.index); };
   window.addEventListener('hashchange', deep);
   requestAnimationFrame(() => requestAnimationFrame(() => {
     document.getElementById('loader').classList.add('done');
     deep();
+    if (new URLSearchParams(location.search).has('present')) cv.setPresent(true);
   }));
 }
 

@@ -38,6 +38,7 @@
       <p>Each glowing mushroom is a chapter. The Gardener walks you through them in order, or you can wander on your own.</p>
       <div class="intro-actions">
         <button class="btn primary big" type="button" data-begin>Begin the tour <kbd>Enter</kbd></button>
+        <button class="btn big" type="button" data-present>Present <kbd>P</kbd></button>
         <button class="btn big" type="button" data-explore>Free explore <kbd>F</kbd></button>
       </div>
       <ol class="howto" aria-label="How it works">
@@ -51,6 +52,7 @@
     <div id="labels" aria-hidden="false"></div>
     <aside id="card" class="glass" aria-live="polite"></aside>
     <footer id="dock" class="glass"></footer>
+    <nav id="presenter" aria-label="Presentation" hidden></nav>
     <div id="toast" role="status"></div>
 
     <div id="help" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
@@ -65,6 +67,7 @@
               <li><kbd>F</kbd> free explore · <kbd>G</kbd> back to the tour</li>
               <li><kbd>L</kbd> jump to the Local Lab (from anywhere)</li>
               <li><kbd>R</kbd> back to the tour from Free Explore (to the stop you left)</li>
+              <li><kbd>P</kbd> presentation mode: just ← → (or a clicker) through every section</li>
               <li>The tour never moves on by itself</li>
             </ul>
           </section>

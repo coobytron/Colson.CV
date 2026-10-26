@@ -2,11 +2,12 @@ import * as THREE from 'three';
 import { Mode } from './Mode.js';
 import { Mushroom } from '../mushroom/Mushroom.js';
 import { seededGenome } from '../mushroom/genome.js';
-import { hashString, mulberry32, clamp, smoothstep } from '../lib/math.js';
+import { hashString, clamp, smoothstep, easeOutCubic } from '../lib/math.js';
 import { heightAt } from '../world/terrain.js';
 import { findFreeSpot } from '../avatar/steer.js';
 import { nearestLinks } from '../world/mycelium.js';
-import { growGarden, gardenCentre, keepClear, placeStand, STAND_OFF } from '../world/garden.js';
+import { growGarden, gardenCentre, keepClear, placeStand, capsOverlap, STAND_OFF } from '../world/garden.js';
+import { createLogos } from '../world/logos.js';
 import { TimelineLabels } from '../ui/timeline.js';
 import { BoredomClock, BOREDOM_SECONDS } from '../avatar/boredom.js';
 import { LocalLab, LAB_ID } from './LocalLab.js';
@@ -23,6 +24,11 @@ const SCALE_KEY = 'colsoncv.uiScale';
 const PROJECT_KEYS = { q: -1, Q: -1, e: 1, E: 1 };
 const NEXT_KEYS = ['PageDown', 'n', 'N', ']', '.'];
 const PREV_KEYS = ['PageUp', 'b', 'B', '[', ','];
+// presentation mode: the arrow keys and a clicker step through the sections instead of walking the Gardener
+const PRESENT_NEXT = ['ArrowRight', 'ArrowDown', ' '];
+const PRESENT_PREV = ['ArrowLeft', 'ArrowUp'];
+const SKILL_IN = 0.5, SKILL_STAGGER = 0.6; // seconds before the first skill sprouts, and between skills
+const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const _v = new THREE.Vector3();
 
@@ -48,6 +54,9 @@ const _spot = new THREE.Vector2();
  *   avatarAtStop    the Gardener has arrived and is standing at currentStop
  *   labPhase        the Local Lab beat: idle | sitting | speaking | handoff | away | back (see LocalLab.js)
  *   bored           he has waited BOREDOM_SECONDS (180) at the current stop and is now visibly bored
+ *   present         presentation mode: big previous / next arrows step through the sections, little else on screen
+ * Skills are mushrooms: each one a chapter added sprouts beside its marker when the Gardener reaches it, and stays
+ * grown for the chapters after (see syncSkills).
  * Subscribe with onState(fn); fn(state, prev) runs after every change.
  */
 export class CVMode extends Mode {
@@ -58,7 +67,8 @@ export class CVMode extends Mode {
     this.byId = Object.fromEntries(this.stops.map((s) => [s.id, s]));
     this.projects = DATA.projects.map((p, index) => ({ ...p, index }));
     this.clearing = DATA.projectClearing;
-    this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false, bored: false, labPhase: 'idle' };
+    this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false, bored: false, labPhase: 'idle', present: false };
+    this.skillsReached = -1; // the last chapter whose skills have been gained (see syncSkills)
     // 180 s by default. `?boredom=N` shortens it for local development only (stripped from production
     // builds); tests set `cv.boredom.seconds` directly.
     const dev = import.meta.env?.DEV ? Number(new URLSearchParams(location.search).get('boredom')) : 0;
@@ -85,6 +95,7 @@ export class CVMode extends Mode {
     if (Object.keys(next).every((k) => next[k] === prev[k])) return;
     this.state = next;
     document.body.dataset.tour = next.tourMode;
+    document.body.classList.toggle('present', next.present);
     for (const fn of this.listeners) fn(next, prev);
   }
 
@@ -144,15 +155,26 @@ export class CVMode extends Mode {
       const marker = this.add(new Mushroom(chapterGenome(s.strain, seed, 0.12, g), { x: s.x, z: s.z, scale: g.marker, seed, data: s, grow: 1, autoGrow: false }));
       marker.stop = s;
       s.marker = marker;
-      // the chapter's garden: what this period added, grown from its profile (src/world/garden.js)
-      s.plants = growGarden(s, c, keep).map((p) => {
-        const m = this.add(new Mushroom(chapterGenome(p.strain, p.seed, g.variety, g),
-          { x: p.x, z: p.z, scale: p.scale, seed: p.seed, grow: 1, autoGrow: false, detail: p.scale < 0.6 ? 0.6 : 0.85 }));
+      // the chapter's garden: what this period added, grown from its profile (src/world/garden.js). Its skills
+      // are mushrooms too, ungrown until the Gardener reaches the chapter.
+      const grown = growGarden(s, c, keep).map((p) => {
+        const skill = !!p.skill;
+        const genome = skill ? chapterGenome(s.strain, p.seed, 0.22, { ...g, tall: 1 }) : chapterGenome(p.strain, p.seed, g.variety, g);
+        const m = this.add(new Mushroom(genome,
+          { x: p.x, z: p.z, scale: p.scale, seed: p.seed, grow: skill ? 0 : 1, autoGrow: false, detail: p.scale < 0.6 ? 0.6 : 0.85 }));
         m.chapter = s.id;
+        if (skill) {
+          Object.assign(m, { skill: p.skill, growT: 0, growWant: 0, growWait: 0 });
+          m.skillLabel = h('div', { class: 'slabel', style: { '--c': s.color } }, p.skill);
+          this.labelsEl.append(m.skillLabel);
+        }
         return m;
       });
+      this.settleCaps(marker, grown);
+      s.skillMushrooms = grown.filter((m) => m.skill);
+      s.plants = grown.filter((m) => !m.skill);
       s.centre = gardenCentre(s, s.plants, g.marker);
-      s.top = Math.max(marker.height, ...s.plants.map((m) => m.height)); // the garden's tallest cap
+      s.top = Math.max(marker.height, ...grown.map((m) => m.height)); // the garden's tallest cap, skills grown
       // its mycelium: stronger and more branched as the career goes on
       for (const ln of nearestLinks([marker, ...s.plants], { k: 1 + g.twigs, maxDist: 3.2 })) {
         links.push({ a: ln.a, b: ln.b, color: s.color, width: 0.022 + 0.012 * g.mycelium, strength: 0.45 * g.mycelium, seed: (seed % 997) + ln.i * 13 + ln.j });
@@ -167,6 +189,33 @@ export class CVMode extends Mode {
     this.net.setLinks(links);
     this.clearRocks();
     this.dates = new TimelineLabels(this);
+    this.logos = createLogos(this.stops, this.group);
+  }
+
+  /**
+   * Caps that cut through each other flicker as they sway (the glitch at a stop while the Gardener stands
+   * still). The layout keeps footprints apart on the ground, but real caps vary by strain, so each new
+   * mushroom is checked against the real caps already placed and shrunk until it clears them.
+   */
+  settleCaps(marker, plants) {
+    this.placedCaps ??= [];
+    const cap = (m) => {
+      const o = m.info.capOrigin, cs = Math.cos(m.rotY), sn = Math.sin(m.rotY);
+      return {
+        x: m.x + (o.x * cs + o.z * sn) * m.scale, z: m.z + (-o.x * sn + o.z * cs) * m.scale, r: m.info.capR * m.scale,
+        y0: (o.y - m.info.capR * 0.45) * m.scale, y1: m.info.capTop * m.scale,
+      };
+    };
+    this.placedCaps.push(cap(marker));
+    for (const m of plants) {
+      const start = m.scale;
+      let c = cap(m);
+      while (this.placedCaps.some((o) => capsOverlap(c, o)) && m.scale > start * 0.55) {
+        m.scale *= 0.92;
+        c = cap(m);
+      }
+      this.placedCaps.push(c);
+    }
   }
 
   /**
@@ -202,6 +251,7 @@ export class CVMode extends Mode {
       p.z = c.z + Math.sin(a) * c.r;
       const seed = hashString(p.id);
       const m = this.add(new Mushroom(seededGenome(p.strain, seed, 0.16), { x: p.x, z: p.z, scale: 0.95, seed, data: p, grow: 1, autoGrow: false }));
+      this.settleCaps(m, []);
       m.project = p;
       p.marker = m;
       links.push({ a: { x: stop.x, z: stop.z }, b: { x: p.x, z: p.z }, color: p.color, width: 0.035, strength: 0.7, seed: 500 + p.index * 17 });
@@ -266,6 +316,7 @@ export class CVMode extends Mode {
     if (!s) return;
     this.boredom.reset(); // any explicit presenter action starts a fresh interval
     this.setState({ tourMode: 'guided', currentStop: s.id, avatarAtStop: false });
+    this.syncSkills(s.index - 1); // the chapters before this one have been gained; this one sprouts on arrival
     this.openCard(s);
     const av = this.app.avatar;
     const there = Math.hypot(av.position.x - s.stand.x, av.position.z - s.stand.z) < AT_STOP && !av.path;
@@ -297,6 +348,7 @@ export class CVMode extends Mode {
 
   arrived(s) {
     this.travel = null;
+    if (this.state.currentStop === s.id) this.syncSkills(s.index, s);
     const av = this.app.avatar;
     this.setState({ avatarAtStop: Math.hypot(av.position.x - s.stand.x, av.position.z - s.stand.z) < AT_STOP * 1.6 });
     this.frameStop(s);
@@ -308,7 +360,8 @@ export class CVMode extends Mode {
     if (app.follow === av) app.follow = null;
     const tx = av.position.x * 0.6 + s.x * 0.4, tz = av.position.z * 0.6 + s.z * 0.4;
     // aim a little higher for a taller garden, so it and its date both fit in the frame
-    const target = new THREE.Vector3(tx, heightAt(tx, tz) + clamp(s.top * 0.5, 1.05, 1.9), tz);
+    // (a stop with a logo over its marker aims higher still, to keep the logo below the top bar)
+    const target = new THREE.Vector3(tx, heightAt(tx, tz) + clamp(s.top * 0.5, 1.05, 1.9) + (s.logoMark ? 0.45 : 0), tz);
     const ca = Math.cos(VIEW_TURN), sa = Math.sin(VIEW_TURN);
     const ox = s.dir.x * ca - s.dir.z * sa, oz = s.dir.x * sa + s.dir.z * ca;
     // face the camera, turned slightly toward the marker
@@ -321,12 +374,104 @@ export class CVMode extends Mode {
     this.travel = null;
     this.boredom.reset();
     this.setState({ tourMode: 'free', avatarAtStop: false });
+    this.syncSkills(this.stops.length - 1, this.stops); // the whole story, grown
     this.closeCard();
     // high and wide enough to see every garden, and the dates over them, in their walk order
     this.app.flyTo(new THREE.Vector3(2, 0.9, 0), { distance: 30, polar: 0.8, azimuth: 0.15, duration: 1.6 });
   }
 
   toggleExplore() { if (this.state.tourMode === 'free') this.begin(); else this.explore(); }
+
+  // ---- presentation mode --------------------------------------------------------------
+  /**
+   * The talk as a flat list of sections, for the arrows: every chapter in order, with the featured
+   * experiments right after the Experiments stop (each its own section), then the Local Lab.
+   */
+  get sections() {
+    this._sections ??= this.stops.flatMap((s) => [
+      { kind: 'stop', s, label: s.label, color: s.color },
+      ...(s.id === this.clearing.stop ? this.projects.map((p) => ({ kind: 'project', p, label: p.label, color: p.color })) : []),
+    ]);
+    return this._sections;
+  }
+
+  /** Index into sections of what is on screen now (-1 before the tour starts). */
+  get sectionIndex() {
+    const p = this.cardProject;
+    if (p) return this.sections.findIndex((x) => x.p === p);
+    if (this.state.tourMode !== 'guided' || !this.current) return -1;
+    return this.sections.findIndex((x) => x.s === this.current);
+  }
+
+  goToSection(i) {
+    const list = this.sections;
+    const x = list[clamp(i, 0, list.length - 1)];
+    if (x.kind === 'stop') { this.goToStop(x.s.index); return; }
+    // a project is a section of the Experiments chapter: the tour stays on that stop
+    const exp = this.byId[this.clearing.stop];
+    if (this.state.tourMode !== 'guided' || this.state.currentStop !== exp.id) {
+      this.setState({ tourMode: 'guided', currentStop: exp.id, avatarAtStop: false });
+      this.syncSkills(exp.index);
+    }
+    this.selectProject(x.p);
+  }
+
+  stepSection(dir) {
+    const i = this.sectionIndex;
+    const last = this.sections.length - 1;
+    if (i < 0) return this.goToSection(0);
+    if (i + dir > last) return this.toast('That’s the last section');
+    if (i + dir < 0) return this.toast('That’s the first section');
+    this.goToSection(i + dir);
+  }
+
+  /** Presentation mode on or off. Starting it before the tour starts the tour. */
+  setPresent(on) {
+    this.setState({ present: on });
+    if (on) {
+      this.view.card = true;
+      this.applyView();
+      if (this.state.tourMode !== 'guided') this.goToSection(Math.max(0, this.sectionIndex));
+    }
+    this.toast(on ? 'Presentation mode: ← → or click the arrows · P to leave' : 'Presentation mode off');
+    for (const fn of this.viewListeners) fn(this.view);
+  }
+
+  togglePresent() { this.setPresent(!this.state.present); }
+
+  // ---- skills -----------------------------------------------------------------------
+  /**
+   * Skills are gained in order: every chapter up to `reached` has its skill mushrooms grown, the rest are
+   * ungrown. `sprout` (a stop, or stops) grows in slowly, one skill after another, for the room to watch; any
+   * other change catches up quickly (a jump past chapters, or stepping back before them).
+   */
+  syncSkills(reached, sprout = null) {
+    this.skillsReached = reached;
+    const slow = new Set([sprout].flat().filter(Boolean));
+    for (const s of this.stops) {
+      const want = s.index <= reached ? 1 : 0;
+      let k = 0;
+      for (const m of s.skillMushrooms) {
+        if (m.growWant === want) continue;
+        m.growWant = want;
+        m.growSlow = want === 1 && slow.has(s);
+        m.growWait = m.growSlow ? SKILL_IN + SKILL_STAGGER * k++ : 0;
+      }
+    }
+  }
+
+  updateSkills(dt) {
+    for (const s of this.stops) for (const m of s.skillMushrooms) {
+      if (m.growT === m.growWant) continue;
+      if (m.growWait > 0) { m.growWait -= dt; continue; }
+      // sprouting takes about two seconds; catching up or shrinking back, a third of that
+      const speed = m.growSlow ? 0.5 : 1.6;
+      m.growT = m.growWant > m.growT ? Math.min(1, m.growT + dt * speed) : Math.max(0, m.growT - dt * speed);
+      m.grow = easeOutCubic(m.growT);
+      if (m.growSlow && m.growT > 0.05 && !m.puffed) { m.puffed = true; m.impulse(0.6, 0.3); } // a little spring as it breaks ground
+      if (m.growT === 0) m.puffed = false;
+    }
+  }
 
   // ---- card ---------------------------------------------------------------------------
   openCard(s) {
@@ -456,6 +601,7 @@ export class CVMode extends Mode {
   }
 
   syncDock() {
+    this.onSectionChange?.(); // the presentation bar shows which section is on screen
     const { currentStop, tourMode } = this.state;
     for (const b of this.stopBtns ?? []) {
       const on = b.dataset.stop === currentStop;
@@ -488,6 +634,13 @@ export class CVMode extends Mode {
   }
 
   onKey(e) {
+    if (e.key === 'p' || e.key === 'P') { if (!e.repeat) this.togglePresent(); return true; }
+    if (this.state.present) {
+      // a clicker sends PageDown / PageUp; arrows and space work too. Everything steps a section.
+      const dir = PRESENT_NEXT.includes(e.key) || NEXT_KEYS.includes(e.key) ? 1 : PRESENT_PREV.includes(e.key) || PREV_KEYS.includes(e.key) ? -1 : 0;
+      if (dir) { if (!e.repeat) this.stepSection(dir); return true; }
+      if (e.key === 'Escape') { this.setPresent(false); return true; }
+    }
     if (e.repeat && !NEXT_KEYS.includes(e.key) && !PREV_KEYS.includes(e.key)) return false;
     if (NEXT_KEYS.includes(e.key)) { if (!e.repeat) this.next(); return true; }
     if (PREV_KEYS.includes(e.key)) { if (!e.repeat) this.prev(); return true; }
@@ -533,7 +686,9 @@ export class CVMode extends Mode {
     }
     this.lab.update(dt);
     this.updateBoredom(dt, av);
-    this.updateLabels();
+    this.updateSkills(dt);
+    this.updateLogos(dt);
+    this.updateLabels(dt);
     this.dates.update(dt);
   }
 
@@ -572,12 +727,25 @@ export class CVMode extends Mode {
     this.setState({ bored });
   }
 
+  /** The company logos: brightest over the current chapter, still there (dimmer) over the rest. */
+  updateLogos(dt) {
+    const { tourMode, currentStop } = this.state;
+    const cam = this.app.camera, calm = reducedMotion();
+    for (const logo of this.logos) {
+      const s = logo.stop;
+      let want = tourMode === 'guided' ? (s.id === currentStop ? 1 : 0.3) : 0.55;
+      want *= clamp(s.marker.appear);
+      logo.update(dt, this.app.env.time, cam, want, calm);
+    }
+  }
+
   updateLabels() {
     const cam = this.app.camera;
     const focused = this.cardStop ?? this.cardProject;
     for (const s of [...this.stops, ...this.projects]) {
       const m = s.marker;
-      m.capWorldPosition(_v);
+      // anchored to the cap at rest, not as it sways, so the label holds perfectly still
+      m.capWorldPosition(_v, { still: true });
       _v.y += 0.3 * m.scale;
       const p = this.app.toScreen(_v);
       const focus = s === focused;
@@ -586,6 +754,8 @@ export class CVMode extends Mode {
       a *= clamp(m.appear);
       if (focused && !focus) a *= 0.45;
       if (focus) a = Math.max(a, p ? 1 : 0);
+      // a lit company logo hangs where this label would be, and names the chapter on its own
+      if (s.logoMark) a *= 1 - smoothstep(0.45, 0.85, s.logoMark.alpha);
       const el = m.label;
       s.screen = null;
       if (!p || a < 0.02) { el.style.opacity = 0; el.style.visibility = 'hidden'; continue; }
@@ -597,5 +767,53 @@ export class CVMode extends Mode {
       el.style.transform = `translate(-50%, -100%) translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) scale(${focus ? 1.08 : 1})`;
       el.classList.toggle('focus', focus);
     }
+    this.updateSkillLabels();
   }
+
+  /**
+   * Each grown skill mushroom carries its skill's name. Only the chapter in view names its skills (in Free
+   * Explore, the garden the Gardener is in), so the frame never fills with words. Anchors are the caps at rest
+   * and the camera holds still at a stop, so the labels hold still too; they step up out of each other's way.
+   */
+  updateSkillLabels() {
+    const { tourMode, currentStop } = this.state;
+    const av = this.app.avatar.position;
+    const cam = this.app.camera.position;
+    const avoid = [];
+    for (const s of this.stops) if (s.screen) avoid.push({ x: s.screen.x - s.screen.w / 2, y: s.screen.y - s.screen.h, w: s.screen.w, h: s.screen.h });
+    this.skillScreens = [];
+    for (const s of this.stops) {
+      const shown = tourMode === 'guided' ? s.id === currentStop && !this.cardProject
+        : tourMode === 'free' && Math.hypot(av.x - s.x, av.z - s.z) < 4.5;
+      const items = [];
+      for (const m of s.skillMushrooms) {
+        const el = m.skillLabel;
+        let a = shown ? smoothstep(0.55, 0.95, m.grow) * clamp(m.appear) : 0;
+        let p = null;
+        if (a > 0.02) {
+          m.capWorldPosition(_v, { still: true });
+          _v.y += 0.12;
+          p = this.app.toScreen(_v);
+          if (!p || cam.distanceTo(_v) > 16) a = 0;
+        }
+        if (a <= 0.02) { el.style.visibility = 'hidden'; continue; }
+        if (!el.size || el.size.zoom !== this.view.scale || !el.size.w) el.size = { w: el.offsetWidth, h: el.offsetHeight, zoom: this.view.scale };
+        items.push({ el, a, x: p.x, y: p.y, w: el.size.w, h: el.size.h });
+      }
+      // nearest the bottom of the frame first; each steps up until it's clear of the ones already placed
+      items.sort((i, j) => j.y - i.y);
+      for (const it of items) {
+        let r = { x: it.x - it.w / 2, y: it.y - it.h, w: it.w, h: it.h };
+        for (let k = 0; k < 12 && avoid.some((o) => overlap(r, o)); k++) r = { ...r, y: r.y - it.h * 0.55 };
+        avoid.push(r);
+        this.skillScreens.push(r);
+        it.el.style.visibility = 'visible';
+        it.el.style.opacity = it.a.toFixed(2);
+        it.el.style.transform = `translate(${r.x.toFixed(1)}px, ${r.y.toFixed(1)}px)`;
+      }
+    }
+  }
+
 }
+
+const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;

@@ -10,6 +10,10 @@ Run in headless Chromium with software rendering, at **1440 × 900** and **1920 
 
 **The 3-minute boredom, on the real 180 s clock, per section.** The simulation is stepped directly (an accelerated test clock) so 180 s takes seconds. At CBU, Freelance, VICE, Apple, Experiments and at a project: not bored at 179.95 s, bored at 180.00 s. The default limit is checked to be 180 s, with nothing shortened. Local Lab stays un-bored for four minutes. The clock logic is also unit-tested (`npm test`, 10 tests).
 
+**Presentation mode** (`--only present`): every section in order (the five chapters, each experiment, the Local Lab) by → , the on-screen next arrow, PageUp back, and the progress dots; only the arrows and progress bar on screen; P leaves it on the same stop.
+
+**Standing still:** at every chapter, every label holds exactly still between two looks a second apart, and no two mushroom caps cut through each other (so nothing flickers as they sway). Each chapter's skills grow in as named mushrooms on arrival.
+
 **Presenter controls:** V (labels), I (card), + / − and A− / A+ (text size 100–175%, remembered across a reload), Full, H, L (Local Lab), F / G / R (Free Explore and back), N / B / 1–6 (stops). At every text size the card, dock and top bar stay on screen, the card clears the dock, and nothing scrolls sideways.
 
 **Accessibility basics:** every control is reachable by keyboard; every visible button and link is at least 24 × 24 px (the WCAG 2.2 AA minimum); the speech bubble is a polite live region; reduced motion swaps the Gardener's looping gestures for a stable pose.
@@ -35,12 +39,13 @@ None of this can be checked from a build session. In rough order:
 6. **Contrast on the projector.** I checked layout and size but did not measure colour contrast. Projectors wash out dim text, such as the grey notes on the cards. Tell me what's hard to read and I'll lift it.
 7. **The look of it.** The Gardener is a dark silhouette lit mostly by the laptop and monitor glow, and the Local Lab desk and monitor are simple props. This is your art direction call, not a test.
 8. **Real boredom, once.** Sit at a stop for three real minutes and watch it. The accelerated test proves the timing. Only you can judge how the gag looks and feels.
-9. **Every Open demo and Code button** on the project cards, from the live site. Note that the Mycelia 2 Code button points at `Mushroom-Sim-2`; if that repo is private, visitors will get a 404.
+9. **Every Open demo and Code button** on the project cards, from the live site. The Balloon Type Field and StressType demo links (their repos' GitHub Pages sites) could not be opened from the build session, so check they load. Visual Creature Compiler's repo is private, so its card says *Live on Colson's Mac* and has no Code button.
 10. **Fullscreen** (the Full button) in your browser. Browsers differ on whether they allow it.
 11. **Touch screens and trackpads:** I did not test on real touch hardware.
 
 ## Known limits
 
 - Only headless Chromium on software GL was tested. Safari, Firefox and real GPUs weren't.
-- Visual Synth has no public link yet, and Draw Things Control is "Live on Colson's Mac" by design.
+- Visual Creature Compiler is "Live on Colson's Mac" by design (its repo is private).
+- The floating logos are glow masks made from the VICE and Apple logos Colson supplied. Their look on a real GPU and projector is an art direction call; QA only checks they're lit, on screen and clear of the date.
 - "Away" at the Local Lab means the window losing focus or the tab being hidden. Switching to Finder does that, but so does clicking into DevTools or another window. The card then says Welcome back when you click back into the page.
