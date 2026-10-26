@@ -90,6 +90,7 @@ export default {
       strain: 'moss',
       color: '#b6f45a',
       x: 8, z: 6.5,
+      standOff: 2.0, // the Gardener sits at a workstation on the grove side of this marker (see LocalLab.js)
       presentationOrder: 6,
       links: [],
       unconfirmed: [],

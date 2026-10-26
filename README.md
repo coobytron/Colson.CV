@@ -14,6 +14,7 @@ It's built to sit behind a live talk. The tour moves only when the presenter say
 | **B** / **PageUp** / **[** | previous stop |
 | **1**–**6** | jump to a stop |
 | **Q** / **E** | browse the featured projects (from the Experiments stop, a project card, or Free Explore) |
+| **L** | jump to the Local Lab from anywhere (Free Explore included) |
 | **F** | Free Explore (press again, or **G**, to return to the tour) |
 | **Enter** | begin the tour from the start screen |
 | **WASD** / arrows, **Shift**, **C** | walk, run, sit (the original Mycelia controls) |
@@ -47,8 +48,24 @@ Software GL renders only a few frames a second, so QA loads the page with `?qual
 | `presenterPaused` | `true` while the tab is hidden, e.g. after switching to Finder |
 | `avatarAtStop` | the Gardener has arrived and is standing at `currentStop` |
 | `bored` | he has waited 180 s at the current stop (see below) |
+| `labPhase` | the Local Lab beat: `idle`, `sitting`, `speaking`, `handoff`, `away` or `back` (see below) |
 
 While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle behaviour (auto-sit after 6 s, wander home after 40 s). He stays standing at the stop for as long as the presenter talks. Free Explore brings that behaviour back. If a walk gets blocked, the tour tries once from another side, then frames the stop anyway.
+
+## Local Lab: the handoff to your Mac
+
+The last stop is a small workstation in the grove: a rug, a low desk and a monitor. The Gardener walks over, sits cross-legged with his laptop open, and looks at the monitor. The camera frames his face and the screen. The monitor is only a glowing panel that says the Metal shaders run on your Mac. Nothing in the page runs, opens or asks for anything on your computer.
+
+1. He sits, and after a moment a speech bubble says: *"I can't open Metal shaders in here… they're on my Mac."* It fades on its own.
+2. A **LOCAL LAB · LIVE DEMO** card appears beside the scene: *Switch to Finder to open the Metal shaders (⌘ Tab)*. It also has a **Back to the forest** button.
+3. You Cmd-Tab to Finder yourself. The page holds exactly as it is. He stays seated, the tour doesn't advance, he doesn't go home, and he doesn't get bored. Nothing restarts.
+4. When you come back, the card says **Welcome back**, the status pill reads **Q&A · Local Lab**, and **Back to the forest** (Free Explore) is on offer. The previous-stop arrow is on the card too.
+
+**Jump to Local Lab** with **L** from anywhere, or with the Local Lab chip in the dock (also **6**). It works from the guided tour and from Free Explore. Leaving the lab resets it, so every revisit replays the beat, and pressing **L** while already there replays it too.
+
+**What counts as "away":** the window losing focus (Cmd-Tab) or the tab being hidden. The Local Lab also holds the boredom clock for the whole stay, so a long Q&A at the desk is never treated as boredom.
+
+**Standalone:** it needs no local files and makes no network requests. The Pages build works the same with or without the shaders on any machine.
 
 ## Bored at a stop
 

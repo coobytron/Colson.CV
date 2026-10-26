@@ -6,6 +6,7 @@ import { hashString, mulberry32, clamp, smoothstep } from '../lib/math.js';
 import { heightAt } from '../world/terrain.js';
 import { findFreeSpot } from '../avatar/steer.js';
 import { BoredomClock, BOREDOM_SECONDS } from '../avatar/boredom.js';
+import { LocalLab, LAB_ID } from './LocalLab.js';
 import { h, button, icon } from '../ui/dom.js';
 import { I } from '../ui/icons.js';
 import DATA from '../data/cv.js';
@@ -32,6 +33,7 @@ const _spot = new THREE.Vector2();
  *   tourMode        'intro' | 'guided' | 'free'
  *   presenterPaused true while the tab is hidden (presenter switched to another app)
  *   avatarAtStop    the Gardener has arrived and is standing at currentStop
+ *   labPhase        the Local Lab beat: idle | sitting | speaking | handoff | away | back (see LocalLab.js)
  *   bored           he has waited BOREDOM_SECONDS (180) at the current stop and is now visibly bored
  * Subscribe with onState(fn); fn(state, prev) runs after every change.
  */
@@ -43,7 +45,7 @@ export class CVMode extends Mode {
     this.byId = Object.fromEntries(this.stops.map((s) => [s.id, s]));
     this.projects = DATA.projects.map((p, index) => ({ ...p, index }));
     this.clearing = DATA.projectClearing;
-    this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false, bored: false };
+    this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false, bored: false, labPhase: 'idle' };
     // 180 s by default. `?boredom=N` shortens it for local development only (stripped from production
     // builds); tests set `cv.boredom.seconds` directly.
     const dev = import.meta.env?.DEV ? Number(new URLSearchParams(location.search).get('boredom')) : 0;
@@ -56,6 +58,7 @@ export class CVMode extends Mode {
     this.labelsEl = document.getElementById('labels');
     this.card = document.getElementById('card');
     this.build();
+    this.lab = new LocalLab(this); // the final chapter's workstation and handoff
     document.addEventListener('visibilitychange', () => this.setState({ presenterPaused: document.hidden }));
   }
 
@@ -89,7 +92,7 @@ export class CVMode extends Mode {
       // stand point: in front of the marker, toward the middle of the grove
       const len = Math.hypot(s.x, s.z) || 1;
       s.dir = { x: -s.x / len, z: -s.z / len };
-      s.stand = { x: s.x + s.dir.x * STAND_OFF, z: s.z + s.dir.z * STAND_OFF };
+      s.stand = { x: s.x + s.dir.x * (s.standOff ?? STAND_OFF), z: s.z + s.dir.z * (s.standOff ?? STAND_OFF) };
       // a few smaller mushrooms of the same strain behind it, clear of the stand side
       // (the Experiments stop has the project clearing behind it instead)
       const back = Math.atan2(-s.dir.z, -s.dir.x);
@@ -188,7 +191,9 @@ export class CVMode extends Mode {
     this.setState({ tourMode: 'guided', currentStop: s.id, avatarAtStop: false });
     this.openCard(s);
     const av = this.app.avatar;
-    if (Math.hypot(av.position.x - s.stand.x, av.position.z - s.stand.z) < AT_STOP && av.pose === 'stand' && !av.path) {
+    const there = Math.hypot(av.position.x - s.stand.x, av.position.z - s.stand.z) < AT_STOP && !av.path;
+    if (there && (av.pose === 'stand' || (s.id === LAB_ID && av.pose === 'sit'))) {
+      if (s.id === LAB_ID) this.lab.restart(); // Jump to Local Lab while already there replays the beat
       this.arrived(s);
       return;
     }
@@ -205,9 +210,12 @@ export class CVMode extends Mode {
     // fallback when the straight line keeps getting blocked: try the far side of the stand point
     const k = t.attempts === 0 ? 1 : -0.6;
     const side = t.attempts === 0 ? 0 : 0.8;
-    const x = s.x + s.dir.x * STAND_OFF * k - s.dir.z * side;
-    const z = s.z + s.dir.z * STAND_OFF * k + s.dir.x * side;
-    this.app.avatar.go(t.attempts === 0 ? s.stand.x : x, t.attempts === 0 ? s.stand.z : z, { user: true, then: t.then });
+    const off = s.standOff ?? STAND_OFF;
+    const x = s.x + s.dir.x * off * k - s.dir.z * side;
+    const z = s.z + s.dir.z * off * k + s.dir.x * side;
+    // the Local Lab is a seat at a workstation: he sits when he gets there
+    const seat = s.workstation ? { sitAfter: true, sitYaw: s.workstation.yaw } : {};
+    this.app.avatar.go(t.attempts === 0 ? s.stand.x : x, t.attempts === 0 ? s.stand.z : z, { user: true, then: t.then, ...seat });
   }
 
   arrived(s) {
@@ -218,6 +226,7 @@ export class CVMode extends Mode {
   }
 
   frameStop(s, duration = 1.6) {
+    if (s.id === LAB_ID) { this.lab.frame(duration); return; }
     const app = this.app, av = app.avatar;
     if (app.follow === av) app.follow = null;
     const tx = av.position.x * 0.6 + s.x * 0.4, tz = av.position.z * 0.6 + s.z * 0.4;
@@ -255,6 +264,7 @@ export class CVMode extends Mode {
       h('h2', { id: 'cardTitle' }, s.label),
       h('div', { class: 'meta' }, h('span', { class: 'pill' }, s.dates)),
       h('p', { class: 'desc' }, s.summary),
+      s.id === LAB_ID ? this.lab.cardBlock() : null,
       s.links.length ? h('div', { class: 'card-actions' }, ...s.links.map((l) =>
         h('a', { class: 'btn primary', href: l.href, target: '_blank', rel: 'noopener' }, icon(I.external), h('span', { class: 'lbl' }, l.label)))) : null,
       s.id === this.clearing.stop ? h('div', { class: 'project-list', role: 'list', 'aria-label': 'Featured projects' },
@@ -348,7 +358,7 @@ export class CVMode extends Mode {
   // ---- dock ---------------------------------------------------------------------------
   buildDock(el) {
     this.stopBtns = this.stops.map((s) => h('button', {
-      type: 'button', class: 'stop-chip', 'data-stop': s.id, title: `${s.label} (${s.index + 1})`,
+      type: 'button', class: 'stop-chip', 'data-stop': s.id, title: `${s.label} (${s.index + 1}${s.id === LAB_ID ? ' / L' : ''})`,
       'aria-label': `Go to ${s.label}`, onclick: () => this.goToStop(s.index),
     }, h('span', { class: 'dot', style: { background: s.color } }), h('span', { class: 'lbl' }, s.label)));
     this.exploreBtn = button({ label: 'Free explore', icon: I.walk, title: 'Free explore (F)', onClick: () => this.toggleExplore() });
@@ -383,6 +393,7 @@ export class CVMode extends Mode {
     if (m.project) { this.selectProject(m.project); return; }
     const s = m.stop;
     if (!s) return;
+    if (s.id === LAB_ID) { this.goToStop(s.index); return; } // the lab is a place to go to, not a mushroom to kneel at
     if (this.state.tourMode === 'free') {
       this.openCard(s);
       this.app.avatar.walkTo(null, { kneelAt: m });
@@ -402,6 +413,8 @@ export class CVMode extends Mode {
       this.stepProject(PROJECT_KEYS[e.key]);
       return true;
     }
+    // Jump to Local Lab, from anywhere (the class contingency)
+    if (e.key === 'l' || e.key === 'L') { this.goToStop(this.byId[LAB_ID].index); return true; }
     if (e.key === 'Enter' && this.state.tourMode === 'intro') { this.begin(); return true; }
     if (e.key === 'f' || e.key === 'F') { this.toggleExplore(); return true; }
     if ((e.key === 'g' || e.key === 'G') && this.state.tourMode !== 'guided') { this.begin(); return true; }
@@ -429,6 +442,7 @@ export class CVMode extends Mode {
     if (s && this.state.avatarAtStop && Math.hypot(av.position.x - s.stand.x, av.position.z - s.stand.z) > AT_STOP * 1.6) {
       this.setState({ avatarAtStop: false });
     }
+    this.lab.update(dt);
     this.updateBoredom(dt, av);
     this.updateLabels();
   }
