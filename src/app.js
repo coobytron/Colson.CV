@@ -309,7 +309,8 @@ export class App {
     const loop = () => {
       requestAnimationFrame(loop);
       const dt = Math.min(0.05, this.clock.getDelta());
-      this.frame(dt);
+      // one bad frame must not end the show: report it once and keep drawing
+      try { this.frame(dt); } catch (err) { if (!this.frameFailed) { this.frameFailed = true; console.error('frame error', err); } }
     };
     loop();
   }

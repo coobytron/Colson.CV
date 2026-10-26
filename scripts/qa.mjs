@@ -10,8 +10,10 @@
 //   options: --port 4177  --out .shots  --sizes 1440x900,1920x1080  --timescale 6 (sim steps per frame;
 //   SwiftShader renders a few fps, so the walk is sped up — screenshots are low-quality preset)
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { createServer } from 'node:http';
+import { existsSync, mkdirSync, writeFileSync, createReadStream, statSync } from 'node:fs';
+import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
+import CV from '../src/data/cv.js';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
@@ -22,6 +24,7 @@ const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[
 const port = Number(opt('port', 4177));
 const outDir = resolve(ROOT, opt('out', '.shots'));
 const timescale = Number(opt('timescale', 6));
+const only = opt('only', 'all'); // all | smoke | full | extras
 const sizes = opt('sizes', '1440x900,1920x1080').split(',').map((s) => s.split('x').map(Number));
 mkdirSync(outDir, { recursive: true });
 
@@ -209,7 +212,7 @@ async function run(base, [w, hgt]) {
 
   await page.keyboard.press('3');
   await settle(stops[2]);
-  await sleep(6000);
+  await waitFor(async () => (await cvState()).elapsed > 1, 60000);
   const b0 = await cvState();
   check(`${tag} boredom default is 180 s and the clock runs while he waits`, b0.seconds === 180 && b0.elapsed > 1 && !b0.bored, `${b0.elapsed.toFixed(1)} s of ${b0.seconds}`);
   for (let i = 0; i < 8; i++) { await page.mouse.move(200 + i * 90, 300 + (i % 3) * 60); await sleep(150); }
@@ -272,13 +275,14 @@ async function run(base, [w, hgt]) {
   await sleep(1500);
   await shorten(6);
   const pb = await waitFor(async () => (await cvState()).bored);
-  await sleep(2500);
+  await waitFor(async () => (await cvState()).weight > 0.5, 30000);
   const p1 = await cvState();
   check(`${tag} bored at a project: he stands up beside it`, !!pb && p1.pose === 'stand' && p1.weight > 0.5, `pose ${p1.pose}, weight ${p1.weight.toFixed(2)}`);
   await shot('42-bored-project');
   await page.keyboard.press('f');
-  await sleep(1000);
-  check(`${tag} Free Explore is never bored`, !(await cvState()).bored);
+  await waitFor(async () => { const c = await cvState(); return c.tourMode === 'free' && !c.bored; }, 30000);
+  const fx = await cvState();
+  check(`${tag} Free Explore is never bored`, fx.tourMode === 'free' && !fx.bored);
 
   // ---- Local Lab (#4): workstation, speech bubble, handoff, Cmd-Tab and back ----
   const lab = () => page.evaluate(() => {
@@ -322,7 +326,7 @@ async function run(base, [w, hgt]) {
 
   // back to the forest, then revisit reliably (shortcut, previous/next, jump while already there)
   await page.click('#card .handoff button');
-  await sleep(1500);
+  await waitFor(async () => (await lab()).labPhase === 'idle', 30000);
   const fr = await lab();
   check(`${tag} Back to the forest hands the grove over (Free Explore)`, fr.tourMode === 'free' && fr.labPhase === 'idle' && !fr.bubble, `${fr.tourMode}, ${fr.labPhase}`);
   await page.keyboard.press('l');
@@ -348,14 +352,283 @@ async function run(base, [w, hgt]) {
   return { size: tag, drawCalls: draws, errors };
 }
 
+// ---- shared helpers for the extra pages ------------------------------------------------------------------
+const waitUntil = async (fn, ms = 120000) => {
+  const until = Date.now() + ms;
+  while (Date.now() < until) { const v = await fn(); if (v) return v; await sleep(250); }
+  return null;
+};
+
+async function openPage(base, [w, hgt], { init, query = `?quality=low&timescale=${timescale}`, expectApp = true } = {}) {
+  const browser = await chromium.launch({ executablePath: browserPath(), args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const page = await browser.newPage({ viewport: { width: w, height: hgt } });
+  const errors = [], bad = [], outside = [];
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  page.on('pageerror', (e) => errors.push(String(e)));
+  page.on('response', (r) => { if (r.status() >= 400) bad.push(`${r.status()} ${r.url()}`); });
+  page.on('requestfailed', (r) => bad.push(`failed ${r.url()}`));
+  page.on('request', (r) => { if (!/^(data|blob|about):/.test(r.url()) && new URL(r.url()).origin !== new URL(base).origin) outside.push(r.url()); });
+  if (init) await page.addInitScript(init);
+  await page.goto(base + query, { waitUntil: 'load' });
+  if (expectApp) {
+    await page.waitForFunction(() => window.colsonCV && document.getElementById('loader').classList.contains('done'), null, { timeout: 30000 });
+    await sleep(3000);
+  }
+  return { browser, page, errors, bad, outside };
+}
+
+// ---- boredom at every section on the REAL 180 s clock, on a fresh page (nothing shortened) ---------------
+async function boredomSweep(base, size) {
+  const tag = `sweep ${size.join('x')}`;
+  const { browser, page, errors } = await openPage(base, size);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = waitUntil;
+  const cvState = () => page.evaluate(() => { const a = window.colsonCV.app.avatar; return { ...window.colsonCV.cv.state, pose: a.pose }; });
+  const phaseIs = (ph, ms) => waitFor(async () => (await page.evaluate(() => window.colsonCV.cv.lab.phase)) === ph, ms);
+  await page.keyboard.press('Enter');
+  await arriveAt(page, 'cbu');
+  const stepSim = (n, dt = 0.05) => page.evaluate(([k, d]) => { for (let i = 0; i < k; i++) window.colsonCV.app.step(d); }, [n, dt]);
+  // Reset the clock once he is settled, then 179.95 s and 180.00 s of simulated time, in ONE uninterrupted call
+  // (so the live render loop can't add frames in between); a mid-way restart would show up as lost time.
+  const exact180 = () => page.evaluate(() => {
+    const { cv, app } = window.colsonCV;
+    for (let i = 0; i < 600 && !(cv.boredomTarget(app.avatar).settled && cv.boredom.elapsed > 1); i++) app.step(0.05);
+    cv.boredom.reset();
+    for (let i = 0; i < 3599; i++) app.step(0.05);
+    const at = (k) => ({ s: cv.boredom.seconds, e: cv.boredom.elapsed, b: cv.boredom.bored, st: cv.state.bored, pose: app.avatar.pose, stop: cv.state.currentStop });
+    const before = at();
+    app.step(0.05);
+    return { before, after: at() };
+  });
+  const clock = () => page.evaluate(() => { const { cv, app } = window.colsonCV; return { s: cv.boredom.seconds, e: cv.boredom.elapsed, b: cv.boredom.bored, st: cv.state.bored, pose: app.avatar.pose, stop: cv.state.currentStop }; });
+  for (const [key, id] of [['1', 'cbu'], ['2', 'freelance'], ['3', 'vice'], ['4', 'apple'], ['5', 'experiments']]) {
+    await page.keyboard.press(key);
+    await arriveAt(page, id);
+    await sleep(800);
+    const { before, after } = await exact180(); // 179.95 s, then 180.00 s
+    check(`${tag} ${id}: on the real 180 s clock, not bored at 179.95 s, bored at 180.00 s`,
+      before.s === 180 && before.stop === id && !before.b && after.b && after.st && Math.abs(after.e - 180) < 0.01 && after.stop === id,
+      `limit ${before.s} s · ${before.e.toFixed(2)} s → ${after.e.toFixed(2)} s · bored ${before.b} → ${after.b}`);
+  }
+  await page.keyboard.press('e'); // a project at the Experiments stop
+  await waitFor(async () => (await cvState()).pose === 'kneel', 60000);
+  await sleep(1200);
+  const { before: pj0, after: pj1 } = await exact180();
+  check(`${tag} project: on the real 180 s clock, not bored at 179.95 s, bored at 180.00 s (he stands up)`, !pj0.b && pj1.b && pj1.pose === 'stand', `${pj0.b} → ${pj1.b}, ${pj1.pose}`);
+  await page.keyboard.press('l'); // the lab holds the clock: a long Q&A at the desk is never boredom
+  await arriveAt(page, 'local-lab');
+  await phaseIs('handoff', 90000);
+  await page.evaluate(() => window.colsonCV.cv.boredom.reset());
+  await stepSim(4800); // four minutes
+  const lb = await clock();
+  check(`${tag} local-lab: four minutes at the desk is never boredom`, !lb.b && !lb.st && lb.pose === 'sit' && lb.stop === 'local-lab', `bored ${lb.b}, ${lb.pose}`);
+  await page.keyboard.press('f');
+  await sleep(600);
+
+  check(`${tag}: console clean`, errors.length === 0, errors.slice(0, 3).join(' | '));
+  await browser.close();
+}
+
+// ---- the staged smoke route: CBU → Freelance → VICE → Apple → Projects → Local Lab → Q&A ----------------
+async function smoke(base, size) {
+  const tag = `smoke ${size.join('x')}`;
+  const { browser, page, errors, bad, outside } = await openPage(base, size);
+  const shot = (n) => page.screenshot({ path: join(outDir, `smoke-${size[0]}x${size[1]}-${n}.png`) });
+  const stops = ['cbu', 'freelance', 'vice', 'apple', 'experiments'];
+  await page.keyboard.press('Enter');
+  for (const [i, id] of stops.entries()) {
+    if (i > 0) await page.keyboard.press('n');
+    const r = await arriveAt(page, id);
+    check(`${tag}: ${i + 1}. ${id}, reached by walking`, r.arrived && (i === 0 || r.walked), `${r.total.toFixed(1)} m`);
+    await sleep(1500);
+    await shot(`${i + 1}-${id}`);
+  }
+  // Projects: the list is on the Experiments card; E opens the first one and he kneels beside it
+  const listed = await page.$$eval('#card .project-chip', (b) => b.length);
+  check(`${tag}: 5. projects listed on the Experiments card`, listed === CV.projects.length, `${listed} of ${CV.projects.length}`);
+  await page.keyboard.press('e');
+  await waitUntil(() => page.evaluate(() => window.colsonCV.app.avatar.pose === 'kneel' && window.colsonCV.app.avatar.we[2] > 0.9), 90000);
+  const first = CV.projects[0];
+  const href = await page.$eval('#card a.btn.primary', (a) => a.href).catch(() => null);
+  check(`${tag}: 5. first project card opens its verified demo`, href === first.demoLink, href ?? 'no link');
+  await sleep(1200);
+  await shot('5b-project');
+  // back to the tour, then the last stop (stop 6): Local Lab
+  await page.evaluate(() => window.colsonCV.cv.goToStop(4));
+  await arriveAt(page, 'experiments');
+  await page.keyboard.press('n');
+  const lab = await arriveAt(page, 'local-lab');
+  check(`${tag}: 6. local-lab, reached by walking`, lab.arrived && lab.walked, `${lab.total.toFixed(1)} m`);
+  await waitUntil(() => page.evaluate(() => window.colsonCV.cv.lab.phase === 'handoff'), 90000);
+  await sleep(1500);
+  await shot('6-local-lab');
+  const line = await page.$eval('#speech', (e) => e.textContent);
+  check(`${tag}: 6. he says the line and the handoff asks for Finder`, /Metal shaders/.test(line) && /Switch to Finder/.test(await page.$eval('#card', (e) => e.textContent)));
+  // Cmd-Tab to Finder and back → Q&A
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await sleep(4000);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await sleep(1000);
+  const qa = await page.evaluate(() => ({ phase: window.colsonCV.cv.lab.phase, status: document.getElementById('status').textContent, stop: window.colsonCV.cv.state.currentStop }));
+  check(`${tag}: 7. back from Finder: Q&A at the Local Lab`, qa.phase === 'back' && /Q&A/.test(qa.status) && qa.stop === 'local-lab', JSON.stringify(qa));
+  await shot('7-qa');
+  check(`${tag}: console clean, no failed requests, nothing leaves the origin`, errors.length === 0 && bad.length === 0 && outside.length === 0, [...errors, ...bad, ...outside].slice(0, 3).join(' | '));
+  await browser.close();
+}
+
+// ---- presenter controls, layout at every text size, touch targets, text version ---------------------------
+async function controls(base, size) {
+  const tag = `controls ${size.join('x')}`;
+  const { browser, page, errors } = await openPage(base, size);
+  const shot = (n) => page.screenshot({ path: join(outDir, `controls-${size[0]}x${size[1]}-${n}.png`) });
+  await page.keyboard.press('5');
+  await arriveAt(page, 'experiments');
+  await sleep(1500);
+  const vis = (sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.1 && r.width > 0; });
+  // the card slides and fades: judge it only once the transition has settled
+  const settled = (shown) => page.waitForFunction((on) => {
+    const c = document.querySelector('#card'), cs = getComputedStyle(c);
+    return on ? cs.transform === 'none' && Number(cs.opacity) === 1 : Number(cs.opacity) === 0;
+  }, shown, { timeout: 20000 }).then(() => true, () => false);
+  check(`${tag}: labels and card are on`, (await vis('#labels')) && (await vis('#card')));
+  await page.keyboard.press('v');
+  check(`${tag}: V hides the labels, V brings them back`, !(await vis('#labels')) && (await (async () => { await page.keyboard.press('v'); return vis('#labels'); })()));
+  await page.keyboard.press('i');
+  const hid = await settled(false);
+  await page.keyboard.press('i');
+  const back = await settled(true);
+  check(`${tag}: I hides the card, I brings it back`, hid && back);
+
+  // every text size: nothing runs off the screen, nothing scrolls sideways
+  for (const [step, want] of [[0, 1], [1, 1.25], [1, 1.5], [1, 1.75]]) {
+    if (step) await page.keyboard.press('=');
+    await settled(true);
+    const m = await page.evaluate(() => {
+      const inside = (sel) => { const e = document.querySelector(sel); if (!e) return true; const r = e.getBoundingClientRect(); return r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; };
+      return {
+        zoom: Number(getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom')),
+        card: inside('#card'), dock: inside('#dock'), topbar: inside('.topbar > .brand') && inside('#status'),
+        clear: (() => { const c = document.querySelector('#card').getBoundingClientRect(), d = document.querySelector('#dock').getBoundingClientRect(); return c.bottom <= d.top + 1; })(),
+        scrollX: document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth,
+      };
+    });
+    check(`${tag}: text size ${Math.round(want * 100)}%: card, dock and top bar stay on screen, the card clears the dock, no sideways scroll`,
+      m.zoom === want && m.card && m.dock && m.topbar && m.clear && m.scrollX, JSON.stringify(m));
+    await shot(`scale-${Math.round(want * 100)}`);
+  }
+  await page.keyboard.press('=');
+  check(`${tag}: the text size stops at the largest step`, (await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom').trim())) === '1.75');
+  await page.keyboard.press('-');
+  await sleep(300);
+  // remembered across a reload
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => window.colsonCV && document.getElementById('loader').classList.contains('done'));
+  const kept = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ui-zoom').trim());
+  check(`${tag}: the text size is remembered after a reload`, kept === '1.5', kept);
+  for (let i = 0; i < 2; i++) await page.keyboard.press('-');
+  await sleep(300);
+
+  // touch targets and contrast of the interface text, at the default size, with the card showing
+  await page.keyboard.press('5');
+  await arriveAt(page, 'experiments');
+  await sleep(1200);
+  const small = await page.evaluate(() => [...document.querySelectorAll('#ui button, #ui a[href]')]
+    .filter((e) => { const r = e.getBoundingClientRect(), cs = getComputedStyle(e); return r.width > 0 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.1 && !e.closest('#intro.hidden, #help:not(.show)'); })
+    .map((e) => { const r = e.getBoundingClientRect(); return { t: (e.getAttribute('aria-label') || e.title || e.textContent).trim().slice(0, 24), w: Math.round(r.width), h: Math.round(r.height) }; })
+    .filter((x) => x.w < 24 || x.h < 24)); // WCAG 2.2 AA minimum target size is 24 × 24 px
+  check(`${tag}: every visible button and link is at least 24 × 24 px`, small.length === 0, JSON.stringify(small.slice(0, 4)));
+  const keys = await page.evaluate(() => [...document.querySelectorAll('#ui button, #ui a[href]')].every((e) => e.tabIndex >= 0 || e.disabled));
+  check(`${tag}: every control is reachable by keyboard`, keys);
+
+  // text version
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.colsonCV.cv.explore());
+  await sleep(500);
+  await page.evaluate(() => document.querySelector('[data-list]').click());
+  const open = await page.$eval('#listView', (e) => e.textContent).catch(() => '');
+  check(`${tag}: the text version lists every stop and project`, CV.stops.every((x) => open.includes(x.label)) && CV.projects.every((x) => open.includes(x.label)));
+  await shot('text-version');
+  await page.keyboard.press('Escape');
+  check(`${tag}: Esc closes the text version`, (await page.$('#listView')) === null);
+  check(`${tag}: console clean`, errors.length === 0, errors.slice(0, 3).join(' | '));
+  await browser.close();
+}
+
+// ---- phone width, no WebGL, and the GitHub Pages sub-path -------------------------------------------------------
+async function phone(base) {
+  const { browser, page, errors } = await openPage(base, [390, 844]);
+  await page.screenshot({ path: join(outDir, 'phone-intro.png') });
+  const m = await page.evaluate(() => {
+    const r = (sel) => { const e = document.querySelector(sel); const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, t: b.top, b: b.bottom }; };
+    const btn = r('[data-begin]');
+    return { scrollX: document.documentElement.scrollWidth <= innerWidth, begin: btn.l >= 0 && btn.r <= innerWidth && btn.b <= innerHeight };
+  });
+  check('phone 390×844: the start screen fits, with Begin on screen and no sideways scroll', m.scrollX && m.begin, JSON.stringify(m));
+  await page.keyboard.press('Enter');
+  await sleep(4000);
+  const g = await page.evaluate(() => {
+    const inside = (sel) => { const e = document.querySelector(sel); const r = e.getBoundingClientRect(); return r.left >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; };
+    return { card: inside('#card'), dock: inside('#dock'), scrollX: document.documentElement.scrollWidth <= innerWidth };
+  });
+  check('phone 390×844: card and dock stay on screen on the first stop', g.card && g.dock && g.scrollX, JSON.stringify(g));
+  await page.screenshot({ path: join(outDir, 'phone-stop.png') });
+  check('phone 390×844: console clean', errors.length === 0, errors.slice(0, 3).join(' | '));
+  await browser.close();
+}
+
+async function noWebgl(base) {
+  const init = () => { const g = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (t, ...a) { return /webgl/i.test(t) ? null : g.call(this, t, ...a); }; };
+  const { browser, page, errors, outside } = await openPage(base, [1440, 900], { init, query: '', expectApp: false });
+  await sleep(1500);
+  const info = await page.evaluate(() => ({ fb: document.getElementById('loader').className, text: document.getElementById('loader').textContent, hrefs: [...document.querySelectorAll('#loader a')].map((a) => a.href) }));
+  await page.screenshot({ path: join(outDir, 'no-webgl.png') });
+  check('no WebGL: the CV shows as a plain list', info.fb === 'fallback' && CV.stops.every((s) => info.text.includes(s.label)) && CV.projects.every((p) => info.text.includes(p.label)));
+  const want = [...CV.stops.flatMap((s) => s.links.map((l) => l.href)), ...CV.projects.flatMap((p) => [p.availability === 'web' ? p.demoLink : null, p.repoLink])].filter(Boolean).sort();
+  check('no WebGL: its links are exactly the verified demos and repos', JSON.stringify([...info.hrefs].sort()) === JSON.stringify(want), `${info.hrefs.length} of ${want.length}`);
+  check('no WebGL: no errors and no outside requests', errors.length === 0 && outside.length === 0, [...errors, ...outside].join(' | '));
+  await browser.close();
+}
+
+async function subpath() {
+  // GitHub Pages serves a project site from /<repo>/: prove the build works from a sub-path, not just from the root
+  const root = resolve(ROOT, 'dist'), prefix = '/Colson.CV/';
+  const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
+  const srv = createServer((req, res) => {
+    let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    if (!p.startsWith(prefix)) { res.writeHead(404); res.end('not found'); return; }
+    p = p.slice(prefix.length) || 'index.html';
+    if (p.endsWith('/')) p += 'index.html';
+    const f = normalize(join(root, p));
+    if (!f.startsWith(root + sep) || !existsSync(f) || !statSync(f).isFile()) { res.writeHead(404); res.end('not found'); return; }
+    res.writeHead(200, { 'content-type': MIME[extname(f)] ?? 'application/octet-stream' });
+    createReadStream(f).pipe(res);
+  });
+  await new Promise((ok) => srv.listen(port + 7, '127.0.0.1', ok));
+  try {
+    const base = `http://127.0.0.1:${port + 7}${prefix}`;
+    const { browser, page, errors, bad } = await openPage(base, [1280, 800], { query: `?quality=low&timescale=${timescale}` });
+    const ok = await page.evaluate(() => !!window.colsonCV && window.colsonCV.app.mode?.id === 'cv');
+    check('GitHub Pages sub-path (/Colson.CV/): loads with relative paths, no failed requests, no errors', ok && bad.length === 0 && errors.length === 0, [...bad, ...errors].slice(0, 3).join(' | '));
+    await browser.close();
+  } finally { srv.close(); }
+}
+
 const server = await serve();
 const runs = [];
 try {
-  for (const s of sizes) runs.push(await run(server.base, s));
+  if (only === 'all' || only === 'full') for (const s of sizes) runs.push(await run(server.base, s));
+  if (only === 'all' || only === 'smoke') for (const s of sizes) await smoke(server.base, s);
+  if (only === 'all' || only === 'full') for (const s of sizes) await boredomSweep(server.base, s);
+  if (only === 'all' || only === 'full') for (const s of sizes) await controls(server.base, s);
+  if (only === 'all' || only === 'extras') {
+    await phone(server.base);
+    await noWebgl(server.base);
+    if (!opt('url', null)) await subpath();
+  }
 } finally {
   server.stop();
 }
 const failed = results.filter((r) => !r.ok);
-writeFileSync(join(outDir, 'report.json'), JSON.stringify({ when: new Date().toISOString(), runs, results }, null, 2));
+writeFileSync(join(outDir, opt('report', 'report.json')), JSON.stringify({ when: new Date().toISOString(), runs, results }, null, 2));
 log(`${results.length - failed.length}/${results.length} checks passed; screenshots in ${outDir}`);
 process.exit(failed.length ? 1 : 0);
