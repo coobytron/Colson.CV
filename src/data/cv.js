@@ -6,12 +6,12 @@
 //   strain + color (marker mushroom), x / z (marker position), presentationOrder, links ([{ label, href }],
 //   public and verified only), unconfirmed (string[]).
 // Project fields: id, category 'project', label, summary, strain + color, demoLink (verified public URL or
-//   null), repoLink (public repo URL or null — never a private repo), availability: 'web' (has demoLink),
+//   null), repoLink (repo URL or null; set only where Colson has OK'd it), availability: 'web' (has demoLink),
 //   'local' (runs only on Colson's Mac) or 'none' (no public link established yet). Project positions are
 //   laid out in a clearing beside the Experiments stop (see projectClearing).
 //
 // Link check (2026-10-26): every demoLink below returned HTTP 200 with the project's own page title.
-// Repo visibility could not be verified from the build session, so repoLink is null throughout.
+// repoLink: Colson's call (2026-10-26) — every project with a live GitHub Pages demo also links its repo.
 export default {
   name: 'Colson Knight',
   role: 'Art Director',
@@ -108,7 +108,7 @@ export default {
       strain: 'ghost',
       color: '#5ff2e2',
       demoLink: 'https://coobytron.github.io/Mushroom-Sim-2/',
-      repoLink: null,
+      repoLink: 'https://github.com/coobytron/Mushroom-Sim-2',
       availability: 'web',
     },
     {
@@ -130,7 +130,7 @@ export default {
       strain: 'ember',
       color: '#ff9a3c',
       demoLink: 'https://coobytron.github.io/kinetic-type/',
-      repoLink: null,
+      repoLink: 'https://github.com/coobytron/kinetic-type',
       availability: 'web',
     },
     {
@@ -141,7 +141,7 @@ export default {
       strain: 'agaric',
       color: '#ff5c8a',
       demoLink: 'https://coobytron.github.io/MiloPop/',
-      repoLink: null,
+      repoLink: 'https://github.com/coobytron/MiloPop',
       availability: 'web',
     },
     {
@@ -163,7 +163,7 @@ export default {
       strain: 'porcelain',
       color: '#e9f1ff',
       demoLink: 'https://coobytron.github.io/dazzle-camo-studio/',
-      repoLink: null,
+      repoLink: 'https://github.com/coobytron/dazzle-camo-studio',
       availability: 'web',
     },
     {
@@ -174,7 +174,7 @@ export default {
       strain: 'moss',
       color: '#b6f45a',
       demoLink: 'https://coobytron.github.io/NCA-Splash/',
-      repoLink: null,
+      repoLink: 'https://github.com/coobytron/NCA-Splash',
       availability: 'web',
     },
   ],

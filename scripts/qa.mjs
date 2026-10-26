@@ -148,7 +148,7 @@ async function run(base, [w, hgt]) {
   check(`${tag} back to tour returns to same stop`, ret.arrived && (await state(page)).tourMode === 'guided');
 
   // ---- projects: the Experiments card lists them, Q / E browse, he walks over and kneels ----
-  const projects = await page.evaluate(() => window.colsonCV.cv.projects.map(({ id, label, demoLink, availability }) => ({ id, label, demoLink, availability })));
+  const projects = await page.evaluate(() => window.colsonCV.cv.projects.map(({ id, label, demoLink, repoLink, availability }) => ({ id, label, demoLink, repoLink, availability })));
   const listed = await page.$$eval('#card .project-chip', (b) => b.map((x) => x.textContent.trim()));
   check(`${tag} experiments card lists every project`, projects.every((p) => listed.includes(p.label)), listed.join(', '));
   await page.keyboard.press('e');
@@ -174,10 +174,11 @@ async function run(base, [w, hgt]) {
   }));
   for (const c of cards) {
     const p = projects.find((x) => x.id === c.id);
-    const ok = p.availability === 'web'
-      ? c.hrefs.length === 1 && c.hrefs[0] === p.demoLink
-      : c.hrefs.length === 0 && c.text.includes(p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet');
-    check(`${tag} card ${c.id}`, ok && !c.hrefs.some((u) => u.includes('github.com')), c.hrefs.join(' ') || p.availability);
+    // exactly the links in the data: the verified demo (web only) and the OK'd repo, nothing invented
+    const want = [p.availability === 'web' ? p.demoLink : null, p.repoLink].filter(Boolean);
+    const ok = c.hrefs.length === want.length && want.every((u) => c.hrefs.includes(u))
+      && (p.availability === 'web' || c.text.includes(p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet'));
+    check(`${tag} card ${c.id}`, ok, c.hrefs.join(' ') || p.availability);
   }
   // free explore reaches a project through its label
   await page.keyboard.press('f');

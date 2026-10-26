@@ -54,7 +54,7 @@ While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle beh
 - **Career stops** are walked in `presentationOrder`. The copy is intentionally brief, and anything awaiting confirmation goes in a stop's `unconfirmed` field.
 - **Featured projects** grow in a clearing behind the Experiments stop. The Experiments card lists them as buttons, so you don't need to hit a mushroom precisely.
 - **Project links:** a project card shows **Open demo** only for a `demoLink` that has been checked to load. Otherwise it says *Live on Colson's Mac* (`availability: 'local'`) or *No public link yet*.
-- **Repos:** `repoLink` stays `null` unless the repo is confirmed public. Never put a private repo URL there.
+- **Repos:** every project with a live GitHub Pages demo also shows a **Code** button to its repo (`repoLink`). Leave `repoLink` as `null` for anything without one.
 
 ## Deploy
 
