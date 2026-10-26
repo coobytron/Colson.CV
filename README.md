@@ -28,6 +28,7 @@ Clicker remotes that send PageUp/PageDown work out of the box. Tapping a mushroo
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # static site in dist/ (relative paths, GitHub Pages ready)
+npm test         # unit tests for the boredom clock (no browser needed)
 npm run qa       # build, then drive the tour in headless Chromium; screenshots + report in .shots/
 ```
 
@@ -45,8 +46,19 @@ Software GL renders only a few frames a second, so QA loads the page with `?qual
 | `tourMode` | `'intro'`, `'guided'` or `'free'` |
 | `presenterPaused` | `true` while the tab is hidden, e.g. after switching to Finder |
 | `avatarAtStop` | the Gardener has arrived and is standing at `currentStop` |
+| `bored` | he has waited 180 s at the current stop (see below) |
 
 While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle behaviour (auto-sit after 6 s, wander home after 40 s). He stays standing at the stop for as long as the presenter talks. Free Explore brings that behaviour back. If a walk gets blocked, the tour tries once from another side, then frames the stop anyway.
+
+## Bored at a stop
+
+If the Gardener has been waiting at a stop for **180 seconds**, he gets visibly bored while you keep talking. He eases into a slouch and a 15-second loop of understated gestures: a glance at the audience, a weight shift and foot tap, a look at an invisible watch, a stretch, a sigh. The camera eases in a little so the room can see it. There's no sound, no popup, and the tour never advances on its own. He stays bored for as long as you stay at the stop.
+
+- **When the clock runs:** only in the guided tour, once he has *arrived and stopped* at a career stop. It also runs at a project, where he kneels at the mushroom and stands up when he gets bored. It doesn't run while he's walking, in Free Explore, or on the start screen.
+- **What resets it:** walking him (WASD or tap), next/previous, picking a stop or project, Free Explore, or revisiting a stop. Each starts a fresh 180 s. Mouse movement does not reset it.
+- **What pauses it** (the elapsed time is kept, not reset): the tab being hidden, and `cv.holdBoredom('handoff', true)`, which the Local Lab handoff will use. It never fires while paused, and returning doesn't trigger it.
+- **Reduced motion:** with `prefers-reduced-motion`, he holds a stable slouch with a tilted head instead of the looping gestures.
+- **Testing:** `src/avatar/boredom.js` is a pure clock, unit-tested at 179.9 s versus 180.0 s (`npm test`). In the browser, tests set `cv.boredom.seconds`. For local development only, `?boredom=5` shortens it, and that parameter is stripped from production builds.
 
 ## Content
 
