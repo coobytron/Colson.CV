@@ -93,3 +93,47 @@ button.plabel { font: inherit; font-size: 13px; font-weight: 600; color: #e8f5f3
 .handoff .note { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--dim); }
 .handoff .card-actions { margin-top: 12px; }
 .handoff kbd { margin-left: 4px; }
+
+/* ---------- presenter view: text scale, labels and card toggles ---------- */
+:root { --ui-zoom: 1; }
+/* `zoom` scales a whole panel (type, padding, offsets) so it stays readable from the back of a room */
+.topbar, #card, #dock, #intro, .help-card { zoom: var(--ui-zoom); }
+#dock { max-width: calc((100vw - 24px) / var(--ui-zoom)); overflow-x: auto; scrollbar-width: none; }
+#dock::-webkit-scrollbar { display: none; }
+/* the card stops short of the dock at every text size: top offset 84, dock zone 80, both scaled */
+#card { max-height: calc((100vh - 24px) / var(--ui-zoom) - 164px); }
+.help-card { max-height: calc(100vh / var(--ui-zoom) - 32px); }
+/* the stop labels and speech bubble are placed in screen pixels, so they scale their type instead */
+button.plabel { font-size: calc(13px * var(--ui-zoom)); }
+.plabel.project { font-size: calc(12px * var(--ui-zoom)); }
+#speech { font-size: calc(clamp(17px, 1.5vw, 24px) * var(--ui-zoom)); max-width: min(calc(340px * var(--ui-zoom)), 80vw); }
+body.labels-off #labels { display: none; }
+body.card-off #card { opacity: 0; pointer-events: none; transform: translateX(calc(100% + 30px)); }
+.actions.presenter { flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.actions .btn[aria-pressed="false"] { opacity: 0.55; text-decoration: line-through; }
+.actions .btn:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- start screen tutorial ---------- */
+.howto { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 8px; max-width: 540px; }
+.howto li { display: grid; grid-template-columns: 96px 1fr; gap: 12px; align-items: baseline; font-size: clamp(14px, 1.3vw, 17px); line-height: 1.4; color: #d3e6e3; }
+.howto b { color: #f2fffd; font-weight: 650; }
+.howto em { font-style: normal; color: #b6f45a; font-weight: 600; }
+.intro-foot { margin: 14px 0 0; font-size: 14px; color: var(--dim); }
+.linklike { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+@media (max-height: 760px) { .howto { display: none; } }
+
+/* ---------- text version overlay ---------- */
+#listView { position: fixed; inset: 0; z-index: 60; overflow: auto; background: var(--bg); padding: 20px; }
+#listView > .btn { position: fixed; top: 16px; right: 16px; }
+#listView .fallback-card { margin: 6vh auto; }
+
+/* ---------- touch targets ---------- */
+@media (pointer: coarse) {
+  .btn, .stop-chip, .project-chip { min-height: 44px; }
+  .btn.icon { width: 44px; }
+  button.plabel { min-height: 40px; }
+}
+#toast { bottom: calc((92px + var(--safe-b)) * var(--ui-zoom)); font-size: calc(13px * var(--ui-zoom)); }
+@media (max-width: 760px) { .actions.presenter .btn.small { display: none; } } /* presenter buttons are for laptops; the keys still work */
+
+button.plabel { min-height: 24px; } /* a tap target of at least 24 px, even for the small project labels */

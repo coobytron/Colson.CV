@@ -15,6 +15,9 @@ It's built to sit behind a live talk. The tour moves only when the presenter say
 | **1**–**6** | jump to a stop |
 | **Q** / **E** | browse the featured projects (from the Experiments stop, a project card, or Free Explore) |
 | **L** | jump to the Local Lab from anywhere (Free Explore included) |
+| **V** / **I** | labels on / off · info card on / off |
+| **+** / **−** | text size: 100, 125, 150, 175% (remembered); also **A−** / **A+** top right |
+| **R** | in Free Explore, back to the stop you left (same as **G**) |
 | **F** | Free Explore (press again, or **G**, to return to the tour) |
 | **Enter** | begin the tour from the start screen |
 | **WASD** / arrows, **Shift**, **C** | walk, run, sit (the original Mycelia controls) |
@@ -30,6 +33,7 @@ npm install
 npm run dev      # http://localhost:5173
 npm run build    # static site in dist/ (relative paths, GitHub Pages ready)
 npm test         # unit tests for the boredom clock (no browser needed)
+npm run smoke    # just the staged classroom route (below), on a fresh page
 npm run qa       # build, then drive the tour in headless Chromium; screenshots + report in .shots/
 ```
 
@@ -51,6 +55,25 @@ Software GL renders only a few frames a second, so QA loads the page with `?qual
 | `labPhase` | the Local Lab beat: `idle`, `sitting`, `speaking`, `handoff`, `away` or `back` (see below) |
 
 While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle behaviour (auto-sit after 6 s, wander home after 40 s). He stays standing at the stop for as long as the presenter talks. Free Explore brings that behaviour back. If a walk gets blocked, the tour tries once from another side, then frames the stop anyway.
+
+## For the day: presenter view, contingencies, and the smoke route
+
+**Presenter view** (top right, and the keys above): show or hide the labels and the info card, bump the text size for a projector (100–175%, remembered), go fullscreen (**Full**, or your browser's own). **H** hides everything. Every control is reachable by keyboard, and each button is at least 24 × 24 px (44 px on touch screens). The tour never advances by itself, and nothing here touches your computer.
+
+**If something goes wrong:**
+- **No WebGL, or a broken graphics driver:** the page shows the whole CV as a plain list with the verified links. **Text version** on the start screen opens the same list over the grove in any browser.
+- **No network:** nothing is fetched. All content is in the page, and the demo links simply won't open.
+- **A demo link is missing:** that card says *Live on Colson's Mac* or *No public link yet*, never a dead button.
+- **Graphics context lost** (sleep, GPU reset): a notice appears and the engine recovers on its own. One bad frame is reported once and drawing carries on.
+- **Tab hidden / Cmd-Tab to Finder:** the scene holds exactly; the boredom clock pauses; the Local Lab offers Q&A when you return.
+- **Reduced motion:** the Gardener's bored loop becomes a stable pose.
+- **Phones:** the layout fits (checked at 390 × 844), though the show is built for a laptop and a projector.
+
+**What's verified, and what's yours to check on the day:** see [QA.md](QA.md), with screenshots in [docs/screenshots](docs/screenshots/).
+
+**The staged smoke route** (`npm run smoke`): CBU, Freelance, VICE, Apple, Projects (the first project's demo link), Local Lab, then Cmd-Tab to Finder and back for Q&A. Each hop is checked to be a real walk. It runs on a fresh page at 1440 × 900 and 1920 × 1080 as part of `npm run qa`.
+
+**Deploy (GitHub Pages):** turn Pages on once under **Settings → Pages → Source → GitHub Actions**. Until then every deploy fails at `configure-pages` with "Get Pages site failed". The site then lives at `https://coobytron.github.io/Colson.CV/`. The build uses relative paths, and QA serves it from `/Colson.CV/` to prove that. It doesn't touch Mycelia 2's own deployment.
 
 ## Local Lab: the handoff to your Mac
 
@@ -75,7 +98,7 @@ If the Gardener has been waiting at a stop for **180 seconds**, he gets visibly 
 - **What resets it:** walking him (WASD or tap), next/previous, picking a stop or project, Free Explore, or revisiting a stop. Each starts a fresh 180 s. Mouse movement does not reset it.
 - **What pauses it** (the elapsed time is kept, not reset): the tab being hidden, and `cv.holdBoredom('handoff', true)`, which the Local Lab handoff will use. It never fires while paused, and returning doesn't trigger it.
 - **Reduced motion:** with `prefers-reduced-motion`, he holds a stable slouch with a tilted head instead of the looping gestures.
-- **Testing:** `src/avatar/boredom.js` is a pure clock, unit-tested at 179.9 s versus 180.0 s (`npm test`). In the browser, tests set `cv.boredom.seconds`. For local development only, `?boredom=5` shortens it, and that parameter is stripped from production builds.
+- **Testing:** `src/avatar/boredom.js` is a pure clock, unit-tested at 179.9 s versus 180.0 s (`npm test`). The browser QA checks **every section on the real 180 s clock** by stepping the simulation directly (an accelerated test clock): at each career stop and at a project, he is not bored at 179.95 s and is bored at 180.00 s, and the Local Lab stays un-bored for four minutes. That `?boredom=5` shortcut exists for local development only and is stripped from production builds, and `cv.boredom.seconds` is 180 for real visitors.
 
 ## Content
 

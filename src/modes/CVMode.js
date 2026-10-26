@@ -15,6 +15,8 @@ const STAND_OFF = 1.75; // how far in front of a marker (toward the middle of th
 const AT_STOP = 1.2; // within this of the stand point counts as "at the stop"
 const VIEW_TURN = 0.6; // camera swings this far (rad) off the marker→centre line, so both are in frame
 
+export const UI_SCALES = [1, 1.25, 1.5, 1.75]; // presenter font / UI scale steps
+const SCALE_KEY = 'colsoncv.uiScale';
 const PROJECT_KEYS = { q: -1, Q: -1, e: 1, E: 1 };
 const NEXT_KEYS = ['PageDown', 'n', 'N', ']', '.'];
 const PREV_KEYS = ['PageUp', 'b', 'B', '[', ','];
@@ -57,6 +59,9 @@ export class CVMode extends Mode {
     this.cardProject = null;
     this.labelsEl = document.getElementById('labels');
     this.card = document.getElementById('card');
+    this.view = { labels: true, card: true, scale: this.loadScale() };
+    this.viewListeners = [];
+    this.applyView();
     this.build();
     this.lab = new LocalLab(this); // the final chapter's workstation and handoff
     document.addEventListener('visibilitychange', () => this.setState({ presenterPaused: document.hidden }));
@@ -70,6 +75,41 @@ export class CVMode extends Mode {
     this.state = next;
     document.body.dataset.tour = next.tourMode;
     for (const fn of this.listeners) fn(next, prev);
+  }
+
+  // ---- presenter view controls: labels, card, UI scale, fullscreen -------------------------
+  loadScale() {
+    try {
+      const v = Number(localStorage.getItem(SCALE_KEY));
+      return UI_SCALES.includes(v) ? v : 1;
+    } catch { return 1; } // storage blocked: the default is fine
+  }
+
+  applyView() {
+    const { labels, card, scale } = this.view;
+    document.documentElement.style.setProperty('--ui-zoom', String(scale));
+    document.body.classList.toggle('labels-off', !labels);
+    document.body.classList.toggle('card-off', !card);
+    for (const fn of this.viewListeners) fn(this.view);
+  }
+
+  onView(fn) { this.viewListeners.push(fn); fn(this.view); }
+
+  toggleLabels() { this.view.labels = !this.view.labels; this.applyView(); this.toast(this.view.labels ? 'Labels on' : 'Labels off'); }
+  toggleCard() { this.view.card = !this.view.card; this.applyView(); this.toast(this.view.card ? 'Card on' : 'Card off'); }
+
+  nudgeScale(dir) {
+    const i = Math.min(UI_SCALES.length - 1, Math.max(0, UI_SCALES.indexOf(this.view.scale) + dir));
+    this.view.scale = UI_SCALES[i];
+    try { localStorage.setItem(SCALE_KEY, String(this.view.scale)); } catch { /* storage blocked */ }
+    this.applyView();
+    this.toast(`Text size ${Math.round(this.view.scale * 100)}%`);
+  }
+
+  toggleFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else el.requestFullscreen?.().catch(() => this.toast('Fullscreen isn’t available here. Try F11 or your browser’s menu.'));
   }
 
   /** Hold or release the boredom clock (the elapsed time is kept). Used for the Local Lab handoff. */
@@ -413,6 +453,12 @@ export class CVMode extends Mode {
       this.stepProject(PROJECT_KEYS[e.key]);
       return true;
     }
+    // presenter view: V labels · I card · + / - text size · R back to the last stop
+    if (e.key === 'v' || e.key === 'V') { this.toggleLabels(); return true; }
+    if (e.key === 'i' || e.key === 'I') { this.toggleCard(); return true; }
+    if (e.key === '+' || e.key === '=') { this.nudgeScale(1); return true; }
+    if (e.key === '-' || e.key === '_') { this.nudgeScale(-1); return true; }
+    if ((e.key === 'r' || e.key === 'R') && this.state.tourMode === 'free') { this.begin(); return true; }
     // Jump to Local Lab, from anywhere (the class contingency)
     if (e.key === 'l' || e.key === 'L') { this.goToStop(this.byId[LAB_ID].index); return true; }
     if (e.key === 'Enter' && this.state.tourMode === 'intro') { this.begin(); return true; }
