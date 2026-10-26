@@ -25,6 +25,7 @@ function fallback() {
     h('h2', {}, 'Featured projects'),
     h('ul', {}, ...DATA.projects.map((p) => h('li', {},
       h('b', {}, p.label), h('br'), p.summary, ' ',
+      p.repoLink ? [h('a', { href: p.repoLink, target: '_blank', rel: 'noopener' }, 'Code'), ' '] : null,
       p.availability === 'web' && p.demoLink ? h('a', { href: p.demoLink, target: '_blank', rel: 'noopener' }, 'Open demo')
         : h('span', { class: 'dim' }, p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet'))))));
 }
