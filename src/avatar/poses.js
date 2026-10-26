@@ -145,6 +145,7 @@ export class Poser {
   /**
    * w: [sit, stand, kneel] weights (sum 1). o: { t, dt, walk, phase, run, idle, accX, accZ }
    * idle = standing-still weight (breathing + looking around).
+   * watch (0..1): looking up at a monitor from the sitting pose.
    * bored (0..1), boredT (s since boredom began), calm (reduced motion): the bored layer, standing only.
    */
   apply(w, o) {
@@ -168,6 +169,12 @@ export class Poser {
     add[I.head][1] += 0.5 * look * o.idle;
     add[I.neck][1] += 0.2 * look * o.idle;
     add[I.head][0] += 0.08 * Math.sin(t * 0.21) * o.idle;
+
+    // ---- watching a screen (sitting at the workstation): sit a little taller and lift the gaze ----
+    if (o.watch > 0.001) {
+      add[I.spine][0] -= 0.1 * o.watch * sitW;
+      add[I.head][0] -= 0.17 * o.watch * sitW;
+    }
 
     // ---- bored (only ever on the standing pose, never while walking) ----
     const wk = o.walk;

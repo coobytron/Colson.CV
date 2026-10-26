@@ -99,6 +99,8 @@ async function run(base, [w, hgt]) {
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
+  const outside = [];
+  page.on('request', (r) => { const u = new URL(r.url()); if (!/^(data|blob|about):/.test(r.url()) && u.origin !== new URL(base).origin) outside.push(r.url()); });
   await page.goto(`${base}?quality=low&timescale=${timescale}`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.colsonCV && document.getElementById('loader').classList.contains('done'), null, { timeout: 30000 });
   await sleep(4000);
@@ -278,7 +280,69 @@ async function run(base, [w, hgt]) {
   await sleep(1000);
   check(`${tag} Free Explore is never bored`, !(await cvState()).bored);
 
+  // ---- Local Lab (#4): workstation, speech bubble, handoff, Cmd-Tab and back ----
+  const lab = () => page.evaluate(() => {
+    const { cv, app } = window.colsonCV, a = app.avatar;
+    return {
+      ...cv.state, pose: a.pose, sit: a.we[0], x: a.position.x, z: a.position.z, avatarSame: app.avatar === a,
+      mushrooms: cv.mushrooms.length, elapsed: cv.boredom.elapsed, labPhase: cv.lab.phase,
+      bubble: document.getElementById('speech').classList.contains('show') ? document.getElementById('speech').textContent : null,
+      card: document.getElementById('card').textContent, status: document.getElementById('status').textContent,
+    };
+  });
+  const phaseIs = (ph, ms) => waitFor(async () => (await lab()).labPhase === ph, ms);
+
+  await page.keyboard.press('l'); // Jump to Local Lab, from Free Explore
+  const toLab = await arriveAt(page, 'local-lab');
+  check(`${tag} L jumps to the Local Lab from Free Explore, by walking`, toLab.arrived && toLab.walked && toLab.moving >= 4, `moved ${toLab.total.toFixed(1)} m`);
+  const spoke = await phaseIs('speaking', 60000);
+  const l1 = await lab();
+  check(`${tag} he sits and says the line`, !!spoke && l1.pose === 'sit' && l1.sit > 0.9 && l1.bubble === 'I can’t open Metal shaders in here… they’re on my Mac.', `${l1.pose}, bubble: ${l1.bubble}`);
+  const handed = await phaseIs('handoff', 60000);
+  const l2 = await lab();
+  check(`${tag} the LOCAL LAB / LIVE DEMO handoff says to switch to Finder`, !!handed && /Local Lab · Live demo/.test(l2.card) && /Switch to Finder/.test(l2.card), l2.card.slice(0, 80));
+  check(`${tag} the handoff card offers the way back to the forest`, /Back to the forest/.test(l2.card));
+  await sleep(1800);
+  await shot('50-local-lab');
+
+  // Cmd-Tab to Finder: the window blurs, the presenter is gone for a while, nothing moves
+  await page.evaluate(() => { window.colsonCV.app.lastInteraction = performance.now() - 120000; window.dispatchEvent(new Event('blur')); });
+  await sleep(10000);
+  const aw = await lab();
+  check(`${tag} away in Finder: the scene holds exactly`, aw.labPhase === 'away' && aw.pose === 'sit' && Math.hypot(aw.x - l2.x, aw.z - l2.z) < 0.05
+    && aw.currentStop === 'local-lab' && aw.tourMode === 'guided' && aw.avatarSame && aw.mushrooms === l2.mushrooms, `phase ${aw.labPhase}, drift ${Math.hypot(aw.x - l2.x, aw.z - l2.z).toFixed(3)}`);
+  check(`${tag} away in Finder: not bored, not sent home, no auto-advance`, !aw.bored && aw.elapsed === 0 && aw.currentStop === 'local-lab' && aw.avatarAtStop);
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await sleep(800);
+  const bk = await lab();
+  check(`${tag} back from Finder: same scene, Q&A and Back to the forest on offer`, bk.labPhase === 'back' && /Welcome back/.test(bk.card) && /Back to the forest/.test(bk.card)
+    && /Q&A/.test(bk.status) && Math.hypot(bk.x - l2.x, bk.z - l2.z) < 0.05 && bk.pose === 'sit' && !bk.bored, `${bk.labPhase} · ${bk.status}`);
+  await sleep(1500);
+  await shot('51-local-lab-back');
+
+  // back to the forest, then revisit reliably (shortcut, previous/next, jump while already there)
+  await page.click('#card .handoff button');
+  await sleep(1500);
+  const fr = await lab();
+  check(`${tag} Back to the forest hands the grove over (Free Explore)`, fr.tourMode === 'free' && fr.labPhase === 'idle' && !fr.bubble, `${fr.tourMode}, ${fr.labPhase}`);
+  await page.keyboard.press('l');
+  await arriveAt(page, 'local-lab');
+  check(`${tag} the Local Lab can be revisited from Free Explore`, !!(await phaseIs('handoff', 90000)));
+  await page.keyboard.press('l');
+  await sleep(500);
+  check(`${tag} Jump to Local Lab while already there replays the beat`, !!(await phaseIs('handoff', 90000)));
+  await page.keyboard.press('b');
+  await arriveAt(page, stops.at(-2));
+  const off = await lab();
+  check(`${tag} leaving the lab resets it and hides the line`, off.labPhase === 'idle' && !off.bubble && off.pose === 'stand', `${off.labPhase}, ${off.pose}`);
+  await page.keyboard.press('n');
+  await arriveAt(page, 'local-lab');
+  check(`${tag} next stop back into the lab replays the beat`, !!(await phaseIs('handoff', 90000)));
+  await page.keyboard.press('f');
+  await sleep(1000);
+
   const draws = await page.evaluate(() => window.colsonCV.app.renderer.info.render.calls);
+  check(`${tag} standalone: no requests leave the page's own origin`, outside.length === 0, outside.slice(0, 3).join(' '));
   check(`${tag} console clean`, errors.length === 0, errors.slice(0, 3).join(' | '));
   await browser.close();
   return { size: tag, drawCalls: draws, errors };

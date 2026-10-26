@@ -74,13 +74,18 @@ export class Avatar {
     this.t = 0;
     this.acc = { x: 0, z: 0 };
     this.pv = { x: 0, z: 0 };
-    this.anim = { t: 0, dt: 0, walk: 0, phase: 0, run: 0, idle: 0, accX: 0, accZ: 0, bored: 0, boredT: 0, calm: false };
+    this.anim = { t: 0, dt: 0, walk: 0, phase: 0, run: 0, idle: 0, accX: 0, accZ: 0, bored: 0, boredT: 0, calm: false, watch: 0 };
     // bored-at-a-stop: the mode sets boredTarget; the weight eases in slowly and out quickly
+    this.watchTarget = false;
+    this.watch = 0;
     this.boredTarget = false;
     this.bored = 0;
     this.boredT = 0;
     this.reducedMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   }
+
+  /** Mode hook: looking up at a monitor while sitting (the Local Lab workstation). */
+  setWatching(on) { this.watchTarget = on; }
 
   /** Mode hook: the presenter has left the Gardener waiting long enough to get bored (or not). */
   setBored(on) {
@@ -199,6 +204,8 @@ export class Avatar {
     this.bored = damp(this.bored, wantBored ? 1 : 0, wantBored ? 1.2 : 6, dt);
     if (this.bored < 0.005 && !wantBored) { this.bored = 0; this.boredT = 0; } else if (!calm) this.boredT += dt;
     a.bored = this.bored; a.boredT = this.boredT; a.calm = calm;
+    this.watch = damp(this.watch, this.watchTarget ? 1 : 0, 2.5, dt);
+    a.watch = this.watch;
     const cs = Math.cos(this.yaw), sn = Math.sin(this.yaw);
     a.accZ = clamp(this.acc.x * sn + this.acc.z * cs, -12, 12);
     a.accX = clamp(this.acc.x * cs - this.acc.z * sn, -12, 12);

@@ -54,7 +54,8 @@ function boot() {
     const stop = cv.byId[s.currentStop];
     status.textContent = s.tourMode === 'intro' ? 'Playable CV'
       : s.tourMode === 'free' ? 'Free explore'
-        : `${stop.index + 1} / ${cv.stops.length} · ${stop.label}`;
+        : s.labPhase === 'back' ? `Q&A · ${stop.label}`
+          : `${stop.index + 1} / ${cv.stops.length} · ${stop.label}`;
   };
   cv.onState(syncStatus);
   syncStatus(cv.state);
