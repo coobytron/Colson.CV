@@ -13,27 +13,30 @@ function webglAvailable() {
   } catch { return false; }
 }
 
-/** The whole CV as plain text and links: the no-WebGL fallback, and the "Text version" for any browser. */
-function listCard() {
+/**
+ * The CV as plain text and links. The "Text version" is kept simple: the career only. The no-WebGL fallback
+ * adds the experiments, since without the grove it is the only way to reach their demos.
+ */
+function listCard({ projects = false } = {}) {
   return h('div', { class: 'fallback-card' },
     h('h1', { id: 'listTitle' }, DATA.name), h('p', { class: 'dim' }, `${DATA.role}. Career stops, in order.`),
     h('ol', {}, ...DATA.stops.map((s) => h('li', {},
       h('b', {}, s.label), ' ', h('span', { class: 'dim' }, s.dates), h('br'), s.summary,
       s.skills.length ? [h('br'), h('span', { class: 'dim' }, `Skills added: ${s.skills.join(', ')}.`)] : null,
       ...s.links.map((k) => [' ', h('a', { href: k.href, target: '_blank', rel: 'noopener' }, k.label)])))),
-    h('h2', {}, 'Featured projects'),
-    h('ul', {}, ...DATA.projects.map((p) => h('li', {},
+    projects ? h('h2', {}, 'Experiments') : null,
+    projects ? h('ul', {}, ...DATA.projects.map((p) => h('li', {},
       h('b', {}, p.label), h('br'), p.summary, ' ',
       p.repoLink ? [h('a', { href: p.repoLink, target: '_blank', rel: 'noopener' }, 'Code'), ' '] : null,
       p.availability === 'web' && p.demoLink ? h('a', { href: p.demoLink, target: '_blank', rel: 'noopener' }, 'Open demo')
-        : h('span', { class: 'dim' }, p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet')))));
+        : h('span', { class: 'dim' }, p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet')))) : null);
 }
 
 /** Without WebGL the CV is still readable: the same list, full page. */
 function fallback() {
   const l = document.getElementById('loader');
   l.className = 'fallback';
-  const card = listCard();
+  const card = listCard({ projects: true });
   card.querySelector('p').textContent = `${DATA.role}. The 3D grove needs WebGL, so here is the whole CV as a list.`;
   l.replaceChildren(card);
 }
