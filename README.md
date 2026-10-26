@@ -73,7 +73,9 @@ While the tour is guided, `CVMode.holdAvatar()` suspends the Gardener's idle beh
 
 **The staged smoke route** (`npm run smoke`): CBU, Freelance, VICE, Apple, Projects (the first project's demo link), Local Lab, then Cmd-Tab to Finder and back for Q&A. Each hop is checked to be a real walk. It runs on a fresh page at 1440 × 900 and 1920 × 1080 as part of `npm run qa`.
 
-**Deploy (GitHub Pages):** turn Pages on once under **Settings → Pages → Source → GitHub Actions**. Until then every deploy fails at `configure-pages` with "Get Pages site failed". The site then lives at `https://coobytron.github.io/Colson.CV/`. The build uses relative paths, and QA serves it from `/Colson.CV/` to prove that. It doesn't touch Mycelia 2's own deployment.
+**Deploy (GitHub Pages):** under **Settings → Pages → Build and deployment → Source**, choose **GitHub Actions**, not *Deploy from a branch*. Until you do, every deploy of this repo's workflow fails at `configure-pages` with "Get Pages site failed". The site then lives at `https://coobytron.github.io/Colson.CV/`. The build uses relative paths, and QA serves it from `/Colson.CV/` to prove that. It doesn't touch Mycelia 2's own deployment.
+
+**If Pages is set to *Deploy from a branch* by mistake:** GitHub then serves the repo files as they are, not the Vite build. The page still runs, because `index.html` carries an import map that loads three.js 0.180.0 from the jsDelivr CDN. QA boots the unbuilt source to prove it. It needs a network connection for three.js and loads more slowly, so the Actions deploy is the one to use on the day. Without that import map the page would show "The grove couldn't start: Failed to resolve module specifier 'three'" in Safari.
 
 ## Local Lab: the handoff to your Mac
 

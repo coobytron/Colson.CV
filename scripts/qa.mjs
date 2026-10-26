@@ -11,7 +11,7 @@
 //   SwiftShader renders a few fps, so the walk is sped up — screenshots are low-quality preset)
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { existsSync, mkdirSync, writeFileSync, createReadStream, statSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, createReadStream, statSync, readFileSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path';
 import CV from '../src/data/cv.js';
 import { fileURLToPath } from 'node:url';
@@ -359,7 +359,7 @@ const waitUntil = async (fn, ms = 120000) => {
   return null;
 };
 
-async function openPage(base, [w, hgt], { init, query = `?quality=low&timescale=${timescale}`, expectApp = true } = {}) {
+async function openPage(base, [w, hgt], { init, setup, query = `?quality=low&timescale=${timescale}`, expectApp = true } = {}) {
   const browser = await chromium.launch({ executablePath: browserPath(), args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage({ viewport: { width: w, height: hgt } });
   const errors = [], bad = [], outside = [];
@@ -369,6 +369,7 @@ async function openPage(base, [w, hgt], { init, query = `?quality=low&timescale=
   page.on('requestfailed', (r) => bad.push(`failed ${r.url()}`));
   page.on('request', (r) => { if (!/^(data|blob|about):/.test(r.url()) && new URL(r.url()).origin !== new URL(base).origin) outside.push(r.url()); });
   if (init) await page.addInitScript(init);
+  if (setup) await setup(page);
   await page.goto(base + query, { waitUntil: 'load' });
   if (expectApp) {
     await page.waitForFunction(() => window.colsonCV && document.getElementById('loader').classList.contains('done'), null, { timeout: 30000 });
@@ -613,6 +614,37 @@ async function subpath() {
   } finally { srv.close(); }
 }
 
+async function unbuilt() {
+  // GitHub Pages set to "Deploy from a branch" serves the repo files as they are, not the Vite build. Prove that
+  // still boots: serve the repo root unbuilt, with three.js coming from its CDN (answered here from node_modules).
+  const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json' };
+  const srv = createServer((req, res) => {
+    const p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    const f = normalize(join(ROOT, p.endsWith('/') ? p + 'index.html' : p));
+    if (!f.startsWith(ROOT + sep) || f.includes(`${sep}node_modules${sep}`) || !existsSync(f) || !statSync(f).isFile()) { res.writeHead(404); res.end('not found'); return; }
+    res.writeHead(200, { 'content-type': MIME[extname(f)] ?? 'application/octet-stream' });
+    createReadStream(f).pipe(res);
+  });
+  await new Promise((ok) => srv.listen(port + 9, '127.0.0.1', ok));
+  try {
+    const cdn = [];
+    const setup = (page) => page.route('https://cdn.jsdelivr.net/npm/three@0.180.0/**', (route) => {
+      const rel = new URL(route.request().url()).pathname.replace('/npm/three@0.180.0/', '');
+      const f = join(ROOT, 'node_modules/three', rel);
+      cdn.push(rel);
+      if (existsSync(f)) route.fulfill({ status: 200, contentType: 'text/javascript', body: readFileSync(f) }); else route.fulfill({ status: 404, body: '' });
+    });
+    const { browser, page, errors, bad } = await openPage(`http://127.0.0.1:${port + 9}/`, [1280, 800], { setup, expectApp: false });
+    const booted = await page.waitForFunction(() => window.colsonCV && document.getElementById('loader').classList.contains('done'), null, { timeout: 20000 }).then(() => true, () => false);
+    const ok = booted && (await page.evaluate(() => window.colsonCV.app.mode?.id === 'cv'));
+    const shown = booted ? '' : await page.evaluate(() => document.getElementById('loader').textContent.trim().slice(0, 120));
+    await page.screenshot({ path: join(outDir, 'unbuilt-source.png') });
+    check('unbuilt source (Pages "Deploy from a branch") boots, with three.js from the CDN import map', ok && errors.length === 0 && bad.length === 0 && cdn.length > 0,
+      shown || [...errors, ...bad].slice(0, 3).join(' | ') || `${cdn.length} three.js files via the import map`);
+    await browser.close();
+  } finally { srv.close(); }
+}
+
 const server = await serve();
 const runs = [];
 try {
@@ -624,6 +656,7 @@ try {
     await phone(server.base);
     await noWebgl(server.base);
     if (!opt('url', null)) await subpath();
+    if (!opt('url', null)) await unbuilt();
   }
 } finally {
   server.stop();
