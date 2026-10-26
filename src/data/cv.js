@@ -99,7 +99,7 @@ export default {
       color: '#a98bff',
       x: 10.5, z: -2.5,
       skills: ['Creative coding', 'Generative systems', 'Prototyping', 'Interactive design', 'Self-directed tool building'],
-      garden: { marker: 1.75, count: 46, spread: 3.6, ring: [1.0, 4.8], scale: [0.45, 1.25], strains: ['violet', 'ghost', 'ember', 'agaric', 'moss', 'inkcap', 'porcelain'], variety: 0.4, tall: 1.25, glow: 1.4, mycelium: 1.6, twigs: 3, view: 10.5 },
+      garden: { marker: 1.75, count: 44, spread: 3.6, ring: [1.0, 4.8], scale: [0.45, 1.25], strains: ['violet', 'ghost', 'ember', 'agaric', 'moss', 'inkcap', 'porcelain'], variety: 0.4, tall: 1.25, glow: 1.4, mycelium: 1.6, twigs: 3, view: 10.5 },
       presentationOrder: 5,
       links: [],
       unconfirmed: [],

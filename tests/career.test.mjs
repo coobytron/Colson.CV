@@ -69,7 +69,8 @@ test('no garden mushroom blocks a stand point, the walk between stops, the clear
   for (const p of plants) {
     const r = footprint(p.scale);
     for (const s of stops) assert.ok(Math.hypot(p.x - s.stand.x, p.z - s.stand.z) > r + 1.2, `clear of the ${s.id} stand`);
-    for (let i = 1; i < stops.length; i++) assert.ok(segmentDistance(p.x, p.z, stops[i - 1].stand, stops[i].stand) > r + 0.85, `clear of the walk ${stops[i - 1].id} → ${stops[i].id}`);
+    for (let i = 1; i < stops.length; i++) for (let j = 0; j < i; j++) assert.ok(segmentDistance(p.x, p.z, stops[j].stand, stops[i].stand) > r + 0.85, `clear of the walk ${stops[j].id} → ${stops[i].id}`);
+    for (const s of stops) assert.ok(segmentDistance(p.x, p.z, c, s.stand) > r + 0.85, `clear of the walk from the project clearing to ${s.id}`);
     assert.ok(segmentDistance(p.x, p.z, home, stops[0].stand) > r + 0.75, 'clear of the first walk');
     assert.ok(Math.hypot(p.x - c.x, p.z - c.z) > c.r + 0.8 + r, 'outside the project clearing');
   }

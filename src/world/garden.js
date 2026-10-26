@@ -69,7 +69,7 @@ export function layoutGarden(stop, profile, { keep = { discs: [], paths: [] }, a
   };
 
   for (let i = 0; i < n; i++) {
-    for (let tries = 0; tries < 40; tries++) {
+    for (let tries = 0; tries < 120; tries++) {
       const c = candidate(i, tries);
       // farther out grows larger, so the garden rises from its marker; ordered rows peak at their middle
       const lift = profile.rows ? 1 - Math.abs(c.u ?? 0) * 0.5 : 0.75 + c.t * 0.5;
@@ -117,7 +117,7 @@ export function placeStand(s) {
 
 /**
  * Ground the gardens must leave open: every stand point (the Local Lab's desk too), the walks between
- * consecutive stops and from the Gardener's start, the project clearing and the way into it, other markers.
+ * every pair of stops, from the project clearing to each stop and from the Gardener's start, the project clearing and the way into it, other markers.
  * stops must be in walk order, with stands placed.
  */
 export function keepClear(stops, clearing, { home, wideStand = null }) {
@@ -127,8 +127,10 @@ export function keepClear(stops, clearing, { home, wideStand = null }) {
   stops.forEach((s, i) => {
     discs.push({ x: s.stand.x, z: s.stand.z, r: s.id === wideStand ? 2.2 : 1.3 });
     discs.push({ x: s.x, z: s.z, r: 0.9 + s.garden.marker * 0.5, marker: s.id }); // other gardens keep off it
-    if (i) paths.push({ a: stops[i - 1].stand, b: s.stand, r: 0.9 });
+    // the number keys, N / B and the L jump walk between any two stops (from a project too), not only neighbours
+    for (let j = 0; j < i; j++) paths.push({ a: stops[j].stand, b: s.stand, r: 0.9 });
   });
+  for (const s of stops) paths.push({ a: clearing, b: s.stand, r: 0.9 }); // and from a project in the clearing
   return { discs, paths };
 }
 
