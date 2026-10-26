@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import CV from '../src/data/cv.js';
-import { growGarden, keepClear, placeStand, segmentDistance, footprint } from '../src/world/garden.js';
+import { growGarden, keepClear, placeStand, segmentDistance, footprint, capsOverlap } from '../src/world/garden.js';
 
 const stops = [...CV.stops].sort((a, b) => a.presentationOrder - b.presentationOrder);
 const byId = Object.fromEntries(stops.map((s) => [s.id, s]));
@@ -58,8 +58,11 @@ function world() {
 test('every garden grows its full count, deterministically', () => {
   const a = world().gardens, b = world().gardens;
   assert.deepEqual(a, b);
-  for (const s of stops) assert.equal(a[s.id].length, s.garden.count, `${s.id}: ${a[s.id].length} of ${s.garden.count}`);
-  const strains = new Set(a.experiments.map((p) => p.strain));
+  for (const s of stops) {
+    const companions = a[s.id].filter((p) => !p.skill);
+    assert.equal(companions.length, s.garden.count, `${s.id}: ${companions.length} of ${s.garden.count}`);
+  }
+  const strains = new Set(a.experiments.filter((p) => !p.skill).map((p) => p.strain));
   assert.equal(strains.size, byId.experiments.garden.strains.length);
 });
 
@@ -80,4 +83,45 @@ test('no garden mushroom blocks a stand point, the walk between stops, the clear
     const q = { x: c.x + Math.cos(a) * c.r, z: c.z + Math.sin(a) * c.r };
     for (const p of plants) assert.ok(Math.hypot(p.x - q.x, p.z - q.z) > footprint(p.scale) + 0.75);
   }
+});
+
+test('every skill a chapter added grows as its own mushroom in that chapter, beside the marker', () => {
+  const { gardens } = world();
+  for (const s of stops) {
+    const skills = gardens[s.id].filter((p) => p.skill);
+    assert.deepEqual(skills.map((p) => p.skill), s.skills, `${s.id}: one mushroom per skill, in order`);
+    for (const p of skills) {
+      assert.equal(p.strain, s.strain, 'in the chapter\'s own strain');
+      // the career gardens (not the Experiments ring) keep their skills close enough to frame with the marker
+      if (s.id !== CV.projectClearing.stop) assert.ok(Math.hypot(p.x - s.x, p.z - s.z) < 4.2, `${p.skill} grows near the ${s.id} marker`);
+    }
+  }
+});
+
+test('nothing grows under a marker\'s cap, so no caps cut through each other as they sway', () => {
+  const { gardens } = world();
+  for (const s of stops) for (const p of gardens[s.id]) {
+    assert.ok(Math.hypot(p.x - s.x, p.z - s.z) >= footprint(p.scale) + footprint(s.garden.marker) - 1e-9, `${s.id}: clear of its marker's cap`);
+  }
+});
+
+test('capsOverlap: side by side caps at the same height overlap; one clear above the other does not', () => {
+  const a = { x: 0, z: 0, r: 0.5, y0: 1, y1: 1.4 };
+  assert.ok(capsOverlap(a, { x: 0.8, z: 0, r: 0.5, y0: 1.1, y1: 1.5 }));
+  assert.ok(!capsOverlap(a, { x: 1.3, z: 0, r: 0.5, y0: 1.1, y1: 1.5 }));
+  assert.ok(!capsOverlap(a, { x: 0.5, z: 0, r: 0.5, y0: 1.8, y1: 2.2 }), 'a taller cap passes over a shorter one');
+});
+
+test('the Experiments are the four Colson picked, in order, and only public links are linked', () => {
+  assert.deepEqual(CV.projects.map((p) => p.label), ['Balloon Type Field', 'MiloPop', 'Visual Creature Compiler', 'StressType']);
+  for (const p of CV.projects) {
+    if (p.availability === 'web') assert.match(p.demoLink, /^https:\/\/coobytron\.github\.io\//);
+    else assert.equal(p.demoLink, null);
+  }
+  const vcc = CV.projects.find((p) => p.id === 'visual-creature-compiler');
+  assert.equal(vcc.repoLink, null, 'its repo is private: a Code button would 404');
+});
+
+test('VICE and Apple float their logos; logos only where Colson supplied one', () => {
+  assert.deepEqual(stops.filter((s) => s.logo).map((s) => [s.id, s.logo]), [['vice', 'vice'], ['apple', 'apple']]);
 });

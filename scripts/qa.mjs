@@ -24,7 +24,7 @@ const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[
 const port = Number(opt('port', 4177));
 const outDir = resolve(ROOT, opt('out', '.shots'));
 const timescale = Number(opt('timescale', 6));
-const only = opt('only', 'all'); // all | smoke | chapters | full | extras
+const only = opt('only', 'all'); // all | smoke | chapters | present | full | extras
 const sizes = opt('sizes', '1440x900,1920x1080').split(',').map((s) => s.split('x').map(Number));
 mkdirSync(outDir, { recursive: true });
 
@@ -655,6 +655,38 @@ async function chapters(base, size) {
     const skills = await page.$$eval('#card .skills li', (l) => l.map((x) => x.textContent));
     check(`${tag}: ${s.id}: card shows the dates and exactly the skills this chapter added`,
       JSON.stringify(skills) === JSON.stringify(s.skills) && (await page.$eval('#card .meta', (e) => e.textContent)) === s.dates, skills.join(', ') || 'none');
+    // each skill is a mushroom that grows in once he's there, wearing its name; later chapters' are still ungrown
+    let sk = null;
+    for (let t = 0; t < 240; t++) {
+      sk = await page.evaluate((id) => {
+        const cv = window.colsonCV.cv;
+        const me = cv.byId[id];
+        const vis = (e) => getComputedStyle(e).visibility === 'visible' && Number(getComputedStyle(e).opacity) > 0.5;
+        return { grown: me.skillMushrooms.map((m) => m.grow), shown: me.skillMushrooms.filter((m) => vis(m.skillLabel)).map((m) => m.skill),
+          later: cv.stops.filter((x) => x.index > me.index).flatMap((x) => x.skillMushrooms).filter((m) => m.grow > 0.01).length,
+          earlier: cv.stops.filter((x) => x.index < me.index).flatMap((x) => x.skillMushrooms).filter((m) => m.grow < 0.99).length };
+      }, s.id);
+      if (sk.grown.every((g) => g === 1) && sk.shown.length === s.skills.length) break;
+      await sleep(250);
+    }
+    check(`${tag}: ${s.id}: every skill it added has grown in as a named mushroom; earlier ones stay grown, later ones aren't yet`,
+      sk.grown.length === s.skills.length && sk.grown.every((g) => g > 0.99) && sk.shown.length === s.skills.length && sk.later === 0 && sk.earlier === 0,
+      `${sk.shown.length}/${s.skills.length} named, ${sk.later} later grown, ${sk.earlier} earlier ungrown`);
+    if (s.logo) {
+      const lg = await page.evaluate((id) => { const cv = window.colsonCV.cv, m = cv.byId[id].logoMark; return { alpha: m.alpha, rect: m.screenRect(cv.app), label: getComputedStyle(cv.byId[id].marker.label).visibility }; }, s.id);
+      const r = lg.rect;
+      const dd = (await dates()).dates.find((x) => x.id === s.id);
+      check(`${tag}: ${s.id}: its logo floats lit over the marker, on screen and below the top bar, clear of the date; it stands in for the name label`,
+        lg.alpha > 0.9 && r && r.x >= 0 && r.x + r.w <= size[0] && r.y >= d.topbar && !hits(dd.box, r) && lg.label === 'hidden', JSON.stringify(lg));
+    }
+    // standing still means a still frame: the labels don't move between two looks a second apart
+    const pos = () => page.$$eval('#labels .plabel, #timeline .dlabel, .slabel', (l) => Object.fromEntries(l
+      .filter((e) => getComputedStyle(e).visibility === 'visible' && Number(getComputedStyle(e).opacity) > 0.05).map((e) => [e.textContent, e.style.transform])));
+    const p0 = await pos();
+    await sleep(1200);
+    const p1 = await pos();
+    const moved = Object.keys(p0).filter((k) => k in p1 && p0[k] !== p1[k]);
+    check(`${tag}: ${s.id}: standing still, every label holds still`, moved.length === 0, moved.map((k) => `${k}: ${p0[k]} → ${p1[k]}`).join(' | '));
     await shot(`${i + 1}-${s.id}`);
   }
 
@@ -677,6 +709,42 @@ async function chapters(base, size) {
     check(`${tag}: project ${id}: the Gardener walks over and kneels beside it; its label shows`, knelt && lbl);
     if (i === 0 || i === projects.length - 1) { await sleep(1200); await shot(`5${i ? 'c' : 'b'}-project-${id}`); }
   }
+  check(`${tag}: console clean, nothing leaves the origin`, errors.length === 0 && outside.length === 0, [...errors, ...outside].slice(0, 3).join(' | '));
+  await browser.close();
+}
+
+async function present(base, size) {
+  const tag = `present ${size.join('x')}`;
+  const { browser, page, errors, outside } = await openPage(base, size);
+  const shot = (n) => page.screenshot({ path: join(outDir, `present-${size[0]}x${size[1]}-${n}.png`) });
+  const vis = (sel) => page.$eval(sel, (e) => { const c = getComputedStyle(e); return c.display !== 'none' && c.visibility !== 'hidden' && Number(c.opacity) > 0.05; });
+  await page.click('#intro [data-present]');
+  await sleep(300);
+  check(`${tag}: Present on the start screen starts the tour in presentation mode`, (await page.evaluate(() => document.body.classList.contains('present') && window.colsonCV.state.tourMode === 'guided')));
+  check(`${tag}: only the arrows and the progress bar: no dock, no presenter buttons`, (await vis('#presenter')) && !(await vis('#dock')) && !(await vis('.topbar .actions')));
+  const sections = await page.evaluate(() => window.colsonCV.cv.sections.map((x) => x.label));
+  const want = [...CV.stops].sort((a, b) => a.presentationOrder - b.presentationOrder).flatMap((x) => [x.label, ...(x.id === CV.projectClearing.stop ? CV.projects.map((p) => p.label) : [])]);
+  check(`${tag}: the sections are every chapter, with the experiments after Experiments`, JSON.stringify(sections) === JSON.stringify(want), sections.join(', '));
+  const here = () => page.evaluate(() => { const cv = window.colsonCV.cv; return { i: cv.sectionIndex, where: document.querySelector('.pwhere').textContent, stop: cv.state.currentStop, project: cv.cardProject?.id ?? null, at: cv.state.avatarAtStop, path: !!cv.app.avatar.path }; });
+  const settled = async () => { for (let t = 0; t < 480; t++) { const h = await here(); if (h.project ? !h.path : h.at) return h; await sleep(250); } return here(); };
+  for (let i = 0; i < sections.length; i++) {
+    if (i) await (i % 2 ? page.click('.parrow.next') : page.keyboard.press('ArrowRight'));
+    const h = await settled();
+    check(`${tag}: ${i % 2 ? 'the next arrow' : '→'} reaches section ${i + 1}, ${sections[i]}`, h.i === i && h.where === `${sections[i]} · ${i + 1} / ${sections.length}`, JSON.stringify(h));
+    if ([0, 2, 5, sections.length - 1].includes(i)) { await sleep(1500); await shot(`${String(i + 1).padStart(2, '0')}-${sections[i].toLowerCase().replace(/\W+/g, '-')}`); }
+  }
+  check(`${tag}: the next arrow is disabled on the last section`, await page.$eval('.parrow.next', (b) => b.disabled));
+  await page.keyboard.press('ArrowLeft');
+  const back = await settled();
+  check(`${tag}: ← goes back a section (into the experiments)`, back.i === sections.length - 2 && back.project === CV.projects.at(-1).id, JSON.stringify(back));
+  await page.keyboard.press('PageUp');
+  check(`${tag}: a clicker's PageUp steps back too`, (await settled()).i === sections.length - 3);
+  await page.click('.pdot >> nth=2');
+  check(`${tag}: a progress dot jumps straight to its section`, (await settled()).i === 2);
+  await page.keyboard.press('p');
+  for (let t = 0; t < 20 && !(await vis('#dock')); t++) await sleep(250); // the dock fades back in (slowly, on software GL)
+  const left = { presenter: await vis('#presenter'), dock: await vis('#dock'), ...(await here()) };
+  check(`${tag}: P leaves presentation mode, on the same stop, with the dock back`, !left.presenter && left.dock && left.stop === want[2].toLowerCase(), JSON.stringify(left));
   check(`${tag}: console clean, nothing leaves the origin`, errors.length === 0 && outside.length === 0, [...errors, ...outside].slice(0, 3).join(' | '));
   await browser.close();
 }
@@ -742,6 +810,7 @@ try {
   if (only === 'all' || only === 'full') for (const s of sizes) runs.push(await run(server.base, s));
   if (only === 'all' || only === 'smoke') for (const s of sizes) await smoke(server.base, s);
   if (only === 'all' || only === 'chapters') for (const s of sizes) await chapters(server.base, s);
+  if (only === 'all' || only === 'present') for (const s of sizes) await present(server.base, s);
   if (only === 'all' || only === 'full') for (const s of sizes) await boredomSweep(server.base, s);
   if (only === 'all' || only === 'full') for (const s of sizes) await controls(server.base, s);
   if (only === 'all' || only === 'extras') {

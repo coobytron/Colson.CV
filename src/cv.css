@@ -171,3 +171,55 @@ body.labels-off #timeline { display: none; }
   font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: var(--text);
   background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
 }
+
+/* ---------- skills as mushrooms: each grown skill wears its name ---------- */
+.slabel {
+  position: absolute; left: 0; top: 0; white-space: nowrap; pointer-events: none; visibility: hidden; will-change: transform, opacity;
+  font-size: calc(clamp(11.5px, 0.9vw, 14px) * var(--ui-zoom)); font-weight: 650; letter-spacing: 0.01em; color: #f4fffd;
+  padding: 3px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--c) 18%, rgba(6, 12, 14, 0.72));
+  border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--c) 35%, transparent);
+}
+
+/* ---------- presentation mode: two big arrows, a slim progress bar, nothing else ---------- */
+#presenter[hidden] { display: none; }
+#presenter { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+.parrow {
+  position: absolute; top: 50%; transform: translateY(-50%); pointer-events: auto; cursor: pointer;
+  width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; padding: 0;
+  color: var(--text); background: var(--glass); border: 1px solid var(--line-strong);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); transition: background 0.2s, opacity 0.2s, transform 0.15s;
+}
+.parrow .ico { width: 34px; height: 34px; }
+.parrow.prev { left: 22px; }
+.parrow.next { right: 22px; }
+.parrow:hover:not(:disabled) { background: var(--glass-strong); transform: translateY(-50%) scale(1.06); }
+.parrow:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.parrow:disabled { opacity: 0.25; cursor: default; }
+.pbar {
+  position: absolute; left: 50%; bottom: calc(18px + var(--safe-b)); transform: translateX(-50%); pointer-events: auto; zoom: var(--ui-zoom);
+  display: flex; align-items: center; gap: 14px; padding: 8px 8px 8px 16px; border-radius: 999px; max-width: calc(100vw - 200px);
+}
+.pdots { display: flex; align-items: center; gap: 2px; }
+.pdot { width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; }
+/* a 24 px tap target around a small dot; the experiments are smaller dots inside their chapter */
+.pdot::after {
+  content: ''; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--c) 75%, transparent); transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.pdot.sub::after { width: 8px; height: 8px; }
+.pdot.done::after { background: color-mix(in srgb, var(--c) 45%, transparent); }
+.pdot.on::after { background: var(--c); transform: scale(1.3); box-shadow: 0 0 10px var(--c); }
+.pdot:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+.pwhere { font-size: 14px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
+body.present #dock, body.present #intro, body.present .topbar .actions { opacity: 0; pointer-events: none; visibility: hidden; }
+body.present #card .card-nav, body.present #card .hint { display: none; }
+@media (max-width: 760px) {
+  .parrow { width: 56px; height: 56px; top: auto; bottom: calc(84px + var(--safe-b)); transform: none; }
+  .parrow:hover:not(:disabled) { transform: scale(1.06); }
+  .parrow.prev { left: 12px; } .parrow.next { right: 12px; }
+  .pbar { max-width: calc(100vw - 24px); }
+  .pdots { display: none; }
+}

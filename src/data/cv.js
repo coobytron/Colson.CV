@@ -5,7 +5,9 @@
 // Stop fields: id (stable, used in URLs and by later features), category 'career', label, dates, summary,
 //   strain + color (marker mushroom), x / z (marker position), presentationOrder, links ([{ label, href }],
 //   public and verified only), unconfirmed (string[]), skills (string[]: what this chapter *added*; the story is
-//   cumulative, so each card shows only its own), garden (the chapter's visual profile, see below).
+//   cumulative, so each card shows only its own; each also grows as a skill mushroom beside the marker),
+//   garden (the chapter's visual profile, see below), logo (optional key into src/world/logos.js: the company's
+//   mark floats, glowing, over the garden).
 //   `dates` is the one source for the chapter cards, the text version and the date hovering over each garden.
 //
 // Garden profiles (#15): the career reads as skills compounding into an ever larger living grove, from one
@@ -23,7 +25,6 @@
 //   'local' (runs only on Colson's Mac) or 'none' (no public link established yet). Project positions are
 //   laid out in a clearing beside the Experiments stop (see projectClearing).
 //
-// Link check (2026-10-26): every demoLink below returned HTTP 200 with the project's own page title.
 // repoLink: Colson's call (2026-10-26) — every project with a live GitHub Pages demo also links its repo.
 export default {
   name: 'Colson Knight',
@@ -69,6 +70,7 @@ export default {
       color: '#ff5c8a',
       x: -6, z: -8.5,
       skills: ['Art direction', 'Experiential design', 'Directing', 'Animation'],
+      logo: 'vice',
       garden: { marker: 1.35, count: 9, spread: 2.5, ring: [1.0, 2.5], scale: [0.5, 0.85], strains: ['agaric', 'ember', 'inkcap', 'ghost'], variety: 0.3, tall: 1.35, glow: 1.05, mycelium: 1.0, twigs: 2, view: 8 },
       presentationOrder: 3,
       links: [],
@@ -84,6 +86,7 @@ export default {
       color: '#5ff2e2',
       x: 3.5, z: -9.5,
       skills: ['Creative direction', 'Presentation design', 'Relationships', 'Organizational navigation'],
+      logo: 'apple',
       garden: { marker: 1.5, count: 13, spread: 2.4, ring: [1.4, 3.4], scale: [0.6, 1.0], strains: ['ghost', 'porcelain'], variety: 0.08, tall: 1.15, glow: 1.15, mycelium: 1.2, twigs: 2, rows: 3, view: 9 },
       presentationOrder: 4,
       links: [],
@@ -125,38 +128,19 @@ export default {
   // the experimental clearing: centre and radius of the ring the project mushrooms grow in
   projectClearing: { x: 13.6, z: -4.6, r: 2.3, stop: 'experiments' },
 
+  // Colson's pick (2026-10-26): these four are the Experiments. Demo links are the repos' GitHub Pages sites
+  // (each repo has a Pages workflow); they couldn't be opened from the build session, so check them live.
+  // Visual Creature Compiler's repo is private, so it has no public link.
   projects: [
     {
-      id: 'mycelia-2',
+      id: 'balloon-type-field',
       category: 'project',
-      label: 'Mycelia 2',
-      summary: 'The world you’re standing in: a bioluminescent mushroom portfolio, garden builder and ecosystem simulator.',
-      strain: 'ghost',
-      color: '#5ff2e2',
-      demoLink: 'https://coobytron.github.io/Mushroom-Sim-2/',
-      repoLink: 'https://github.com/coobytron/Mushroom-Sim-2',
-      availability: 'web',
-    },
-    {
-      id: 'visual-synth',
-      category: 'project',
-      label: 'Visual Synth',
-      summary: 'Experimental controls for playing visuals like an instrument.',
-      strain: 'violet',
-      color: '#a98bff',
-      demoLink: null,
-      repoLink: null,
-      availability: 'none',
-    },
-    {
-      id: 'kinetic-type',
-      category: 'project',
-      label: 'Kinetic Type',
-      summary: 'A kinetic typography lab: compose type with gravity, wind, a cursor fan and drag-and-drop letters.',
+      label: 'Balloon Type Field',
+      summary: 'Reaction-diffusion typography: Gray-Scott patterns seeded by letterforms, grown inside or outside the glyphs.',
       strain: 'ember',
       color: '#ff9a3c',
-      demoLink: 'https://coobytron.github.io/kinetic-type/',
-      repoLink: 'https://github.com/coobytron/kinetic-type',
+      demoLink: 'https://coobytron.github.io/balloon-type-field/',
+      repoLink: 'https://github.com/coobytron/balloon-type-field',
       availability: 'web',
     },
     {
@@ -171,36 +155,25 @@ export default {
       availability: 'web',
     },
     {
-      id: 'draw-things-control',
+      id: 'visual-creature-compiler',
       category: 'project',
-      label: 'Draw Things Control',
-      summary: 'Local creative tooling for driving image generation.',
-      strain: 'inkcap',
-      color: '#cfd6ff',
+      label: 'Visual Creature Compiler',
+      summary: 'Source code becomes a deterministic visual genome, and the creature is its phenotype: software you can explore as an organism.',
+      strain: 'violet',
+      color: '#a98bff',
       demoLink: null,
       repoLink: null,
       availability: 'local',
     },
     {
-      id: 'dazzle-camo-studio',
+      id: 'stresstype',
       category: 'project',
-      label: 'Dazzle Camo Studio',
-      summary: 'A WebGL instrument for designing, studying, mapping and publishing First World War dazzle camouflage.',
-      strain: 'porcelain',
-      color: '#e9f1ff',
-      demoLink: 'https://coobytron.github.io/dazzle-camo-studio/',
-      repoLink: 'https://github.com/coobytron/dazzle-camo-studio',
-      availability: 'web',
-    },
-    {
-      id: 'nca-splash',
-      category: 'project',
-      label: 'NCA Splash',
-      summary: 'A cellular automata splash page: the homepage copy seeds the Game of Life, so the words become the system.',
+      label: 'StressType',
+      summary: 'Speech becomes type: whispers set thin and italic, loud words heavy and wide. Made to help my son see his words.',
       strain: 'moss',
       color: '#b6f45a',
-      demoLink: 'https://coobytron.github.io/NCA-Splash/',
-      repoLink: 'https://github.com/coobytron/NCA-Splash',
+      demoLink: 'https://coobytron.github.io/stresstype-app/',
+      repoLink: 'https://github.com/coobytron/stresstype-app',
       availability: 'web',
     },
   ],
