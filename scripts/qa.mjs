@@ -147,6 +147,45 @@ async function run(base, [w, hgt]) {
   const ret = await arriveAt(page, stops.at(-2));
   check(`${tag} back to tour returns to same stop`, ret.arrived && (await state(page)).tourMode === 'guided');
 
+  // ---- projects: the Experiments card lists them, Q / E browse, he walks over and kneels ----
+  const projects = await page.evaluate(() => window.colsonCV.cv.projects.map(({ id, label, demoLink, availability }) => ({ id, label, demoLink, availability })));
+  const listed = await page.$$eval('#card .project-chip', (b) => b.map((x) => x.textContent.trim()));
+  check(`${tag} experiments card lists every project`, projects.every((p) => listed.includes(p.label)), listed.join(', '));
+  await page.keyboard.press('e');
+  const first = projects[0];
+  let knelt = null;
+  for (let t = 0; t < 240 && !knelt; t++) {
+    await sleep(250);
+    knelt = await page.evaluate((id) => {
+      const { cv, app } = window.colsonCV;
+      const a = app.avatar, p = cv.projects.find((x) => x.id === id);
+      return a.pose === 'kneel' && a.we[2] > 0.9 && Math.hypot(a.position.x - p.x, a.position.z - p.z) < 2 ? true : null;
+    }, first.id);
+  }
+  const open = await page.evaluate(() => window.colsonCV.cv.cardProject?.id);
+  check(`${tag} E opens first project, gardener kneels there`, open === first.id && knelt, `card ${open}`);
+  await sleep(1500);
+  await shot('30-project');
+  // every project card: a verified demo button, or an honest "where it lives" note, never an invented link
+  const cards = await page.evaluate(() => window.colsonCV.cv.projects.map((p) => {
+    window.colsonCV.cv.openProjectCard(p);
+    const card = document.getElementById('card');
+    return { id: p.id, hrefs: [...card.querySelectorAll('a[href]')].map((a) => a.href), text: card.textContent };
+  }));
+  for (const c of cards) {
+    const p = projects.find((x) => x.id === c.id);
+    const ok = p.availability === 'web'
+      ? c.hrefs.length === 1 && c.hrefs[0] === p.demoLink
+      : c.hrefs.length === 0 && c.text.includes(p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet');
+    check(`${tag} card ${c.id}`, ok && !c.hrefs.some((u) => u.includes('github.com')), c.hrefs.join(' ') || p.availability);
+  }
+  // free explore reaches a project through its label
+  await page.keyboard.press('f');
+  await sleep(800);
+  await page.evaluate(() => window.colsonCV.cv.projects.at(-1).marker.label.click());
+  await sleep(500);
+  check(`${tag} free explore opens a project from its label`, (await page.evaluate(() => window.colsonCV.cv.cardProject?.id)) === projects.at(-1).id);
+
   await page.keyboard.press('3');
   const jump = await arriveAt(page, stops[2]);
   check(`${tag} number key jumps to stop 3`, jump.arrived);

@@ -13,6 +13,7 @@ const STAND_OFF = 1.75; // how far in front of a marker (toward the middle of th
 const AT_STOP = 1.2; // within this of the stand point counts as "at the stop"
 const VIEW_TURN = 0.6; // camera swings this far (rad) off the marker→centre line, so both are in frame
 
+const PROJECT_KEYS = { q: -1, Q: -1, e: 1, E: 1 };
 const NEXT_KEYS = ['PageDown', 'n', 'N', ']', '.'];
 const PREV_KEYS = ['PageUp', 'b', 'B', '[', ','];
 
@@ -22,7 +23,8 @@ const _spot = new THREE.Vector2();
 /**
  * The playable CV: one seamless grove where each career chapter is a marker mushroom. A manual guided
  * tour walks the Gardener from stop to stop (never auto-advancing), and Free Explore hands the grove back
- * to the visitor without forgetting where the tour was.
+ * to the visitor without forgetting where the tour was. Featured projects grow in a clearing beside the
+ * Experiments stop; each opens a card with its verified demo link (or says where it lives instead).
  *
  * State (read by later features: boredom timer, Local Lab):
  *   currentStop     stop id the tour is on, or null before the tour starts
@@ -35,12 +37,15 @@ export class CVMode extends Mode {
   constructor(app) {
     super(app);
     this.id = 'cv';
-    this.stops = DATA.stops.map((s, index) => ({ ...s, index }));
+    this.stops = [...DATA.stops].sort((a, b) => a.presentationOrder - b.presentationOrder).map((s, index) => ({ ...s, index }));
     this.byId = Object.fromEntries(this.stops.map((s) => [s.id, s]));
+    this.projects = DATA.projects.map((p, index) => ({ ...p, index }));
+    this.clearing = DATA.projectClearing;
     this.state = { currentStop: null, tourMode: 'intro', presenterPaused: false, avatarAtStop: false };
     this.listeners = [];
     this.travel = null; // { stop, attempts, then } while the tour is walking the Gardener somewhere
     this.cardStop = null;
+    this.cardProject = null;
     this.labelsEl = document.getElementById('labels');
     this.card = document.getElementById('card');
     this.build();
@@ -76,8 +81,9 @@ export class CVMode extends Mode {
       s.dir = { x: -s.x / len, z: -s.z / len };
       s.stand = { x: s.x + s.dir.x * STAND_OFF, z: s.z + s.dir.z * STAND_OFF };
       // a few smaller mushrooms of the same strain behind it, clear of the stand side
+      // (the Experiments stop has the project clearing behind it instead)
       const back = Math.atan2(-s.dir.z, -s.dir.x);
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < (s.id === this.clearing.stop ? 0 : 4); i++) {
         const a = back + (i - 1.5) * 0.75 + (rng() - 0.5) * 0.3;
         const r = 1.1 + rng() * 0.7;
         const cs = seed + i + 1;
@@ -87,13 +93,38 @@ export class CVMode extends Mode {
       if (prev) links.push({ a: { x: prev.x, z: prev.z }, b: { x: s.x, z: s.z }, color: s.color, width: 0.06, strength: 1.1, seed: s.index * 31 });
       prev = s;
 
-      const label = h('button', { class: 'plabel', type: 'button', 'aria-label': `${s.title}, ${s.dates}` },
-        h('span', { class: 'dot', style: { background: s.color } }), h('span', { class: 'num' }, String(s.index + 1)), s.title);
-      label.addEventListener('click', () => this.onSelect(marker));
-      this.labelsEl.append(label);
-      marker.label = label;
+      marker.label = this.makeLabel(`${s.label}, ${s.dates}`, s.color, s.label, String(s.index + 1), () => this.onSelect(marker));
     }
+    this.buildProjects(links);
     this.net.setLinks(links);
+  }
+
+  /** Project mushrooms on an arc in the clearing, opening away from their stop so its marker stays clear. */
+  buildProjects(links) {
+    const c = this.clearing;
+    const stop = this.byId[c.stop];
+    const toStop = Math.atan2(stop.z - c.z, stop.x - c.x);
+    const n = this.projects.length;
+    const span = Math.PI * 1.45;
+    for (const p of this.projects) {
+      const a = toStop + Math.PI - span / 2 + (span * p.index) / Math.max(1, n - 1);
+      p.x = c.x + Math.cos(a) * c.r;
+      p.z = c.z + Math.sin(a) * c.r;
+      const seed = hashString(p.id);
+      const m = this.add(new Mushroom(seededGenome(p.strain, seed, 0.16), { x: p.x, z: p.z, scale: 0.95, seed, data: p, grow: 1, autoGrow: false }));
+      m.project = p;
+      p.marker = m;
+      links.push({ a: { x: stop.x, z: stop.z }, b: { x: p.x, z: p.z }, color: p.color, width: 0.035, strength: 0.7, seed: 500 + p.index * 17 });
+      m.label = this.makeLabel(p.label, p.color, p.label, null, () => this.onSelect(m), 'project');
+    }
+  }
+
+  makeLabel(aria, color, text, num, onClick, cls = '') {
+    const label = h('button', { class: `plabel ${cls}`, type: 'button', 'aria-label': aria },
+      h('span', { class: 'dot', style: { background: color } }), num ? h('span', { class: 'num' }, num) : null, text);
+    label.addEventListener('click', onClick);
+    this.labelsEl.append(label);
+    return label;
   }
 
   // ---- mode lifecycle -----------------------------------------------------------
@@ -199,6 +230,8 @@ export class CVMode extends Mode {
 
   // ---- card ---------------------------------------------------------------------------
   openCard(s) {
+    if (this.cardProject) this.cardProject.marker.highlightTarget = 0;
+    this.cardProject = null;
     this.cardStop = s;
     const n = this.stops.length;
     const guided = this.state.tourMode === 'guided';
@@ -207,11 +240,15 @@ export class CVMode extends Mode {
         h('span', { class: 'tag', style: { '--c': s.color } }, `Chapter ${s.index + 1}`),
         h('span', { class: 'count' }, `${s.index + 1} / ${n}`),
         guided ? null : button({ icon: I.close, title: 'Close', cls: 'icon ghost', onClick: () => this.closeCard() })),
-      h('h2', { id: 'cardTitle' }, s.title),
+      h('h2', { id: 'cardTitle' }, s.label),
       h('div', { class: 'meta' }, h('span', { class: 'pill' }, s.dates)),
       h('p', { class: 'desc' }, s.summary),
       s.links.length ? h('div', { class: 'card-actions' }, ...s.links.map((l) =>
         h('a', { class: 'btn primary', href: l.href, target: '_blank', rel: 'noopener' }, icon(I.external), h('span', { class: 'lbl' }, l.label)))) : null,
+      s.id === this.clearing.stop ? h('div', { class: 'project-list', role: 'list', 'aria-label': 'Featured projects' },
+        ...this.projects.map((p) => h('button', { type: 'button', role: 'listitem', class: 'project-chip', onclick: () => this.selectProject(p) },
+          h('span', { class: 'dot', style: { background: p.color } }), p.label))) : null,
+      s.id === this.clearing.stop ? h('p', { class: 'hint' }, h('kbd', {}, 'Q'), ' ', h('kbd', {}, 'E'), ' browse the projects') : null,
       h('div', { class: 'card-nav' },
         button({ icon: I.prev, title: 'Previous stop (PageUp / B)', cls: 'icon', onClick: () => this.prev() }),
         h('span', { class: 'hint' }, h('kbd', {}, 'B'), ' ', h('kbd', {}, 'N'), ' previous / next'),
@@ -221,15 +258,69 @@ export class CVMode extends Mode {
     this.card.style.setProperty('--accent', s.color);
     this.card.classList.add('open');
     for (const st of this.stops) st.marker.highlightTarget = st === s ? 1 : 0;
+    this.showCard();
+  }
+
+  showCard() {
     if (innerWidth < 760) this.app.viewShiftTarget.set(0, 0.2);
     else this.app.viewShiftTarget.set(-0.14, 0);
     this.syncDock();
   }
 
+  // ---- projects ---------------------------------------------------------------------
+  /** Open a project's card and send the Gardener over to kneel beside it. */
+  selectProject(p) {
+    this.travel = null;
+    this.openProjectCard(p);
+    this.app.avatar.walkTo(null, { kneelAt: p.marker });
+    const c = this.clearing;
+    const cap = p.marker.capWorldPosition(_v);
+    this.app.flyTo(new THREE.Vector3(p.x, cap.y * 0.5 + heightAt(p.x, p.z) * 0.5, p.z),
+      { distance: 6, polar: 1.15, azimuth: Math.atan2(c.x - p.x, c.z - p.z) + Math.PI, duration: 1.4 });
+  }
+
+  stepProject(dir) {
+    const i = this.cardProject ? this.cardProject.index + dir : dir > 0 ? 0 : this.projects.length - 1;
+    this.selectProject(this.projects[(i + this.projects.length) % this.projects.length]);
+  }
+
+  openProjectCard(p) {
+    if (this.cardStop) this.cardStop.marker.highlightTarget = 0;
+    if (this.cardProject) this.cardProject.marker.highlightTarget = 0;
+    this.cardStop = null;
+    this.cardProject = p;
+    p.marker.highlightTarget = 1;
+    const stop = this.byId[this.clearing.stop];
+    // only a verified demo URL becomes a button; otherwise say plainly where the project lives
+    const where = p.availability === 'web' && p.demoLink
+      ? h('a', { class: 'btn primary', href: p.demoLink, target: '_blank', rel: 'noopener' }, icon(I.external), h('span', { class: 'lbl' }, 'Open demo'))
+      : h('span', { class: 'pill' }, p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet');
+    this.card.replaceChildren(...[
+      h('div', { class: 'card-top' },
+        h('span', { class: 'tag', style: { '--c': p.color } }, 'Project'),
+        h('span', { class: 'count' }, `${p.index + 1} / ${this.projects.length}`),
+        button({ icon: I.close, title: 'Close', cls: 'icon ghost', onClick: () => this.closeCard() })),
+      h('h2', { id: 'cardTitle' }, p.label),
+      h('p', { class: 'desc' }, p.summary),
+      h('div', { class: 'card-actions' }, where,
+        p.repoLink ? h('a', { class: 'btn', href: p.repoLink, target: '_blank', rel: 'noopener' }, icon(I.github), h('span', { class: 'lbl' }, 'Code')) : null),
+      h('div', { class: 'card-nav' },
+        button({ icon: I.prev, title: 'Previous project (Q)', cls: 'icon', onClick: () => this.stepProject(-1) }),
+        h('button', { type: 'button', class: 'btn small ghost', onclick: () => this.goToStop(stop.index) }, `Back to ${stop.label}`),
+        button({ icon: I.next, title: 'Next project (E)', cls: 'icon', onClick: () => this.stepProject(1) })),
+    ].filter(Boolean));
+    this.card.setAttribute('aria-labelledby', 'cardTitle');
+    this.card.style.setProperty('--accent', p.color);
+    this.card.classList.add('open');
+    this.showCard();
+  }
+
   closeCard() {
     this.card.classList.remove('open');
     if (this.cardStop) this.cardStop.marker.highlightTarget = 0;
+    if (this.cardProject) this.cardProject.marker.highlightTarget = 0;
     this.cardStop = null;
+    this.cardProject = null;
     this.app.viewShiftTarget.set(0, 0);
   }
 
@@ -244,9 +335,9 @@ export class CVMode extends Mode {
   // ---- dock ---------------------------------------------------------------------------
   buildDock(el) {
     this.stopBtns = this.stops.map((s) => h('button', {
-      type: 'button', class: 'stop-chip', 'data-stop': s.id, title: `${s.title} (${s.index + 1})`,
-      'aria-label': `Go to ${s.title}`, onclick: () => this.goToStop(s.index),
-    }, h('span', { class: 'dot', style: { background: s.color } }), h('span', { class: 'lbl' }, s.title)));
+      type: 'button', class: 'stop-chip', 'data-stop': s.id, title: `${s.label} (${s.index + 1})`,
+      'aria-label': `Go to ${s.label}`, onclick: () => this.goToStop(s.index),
+    }, h('span', { class: 'dot', style: { background: s.color } }), h('span', { class: 'lbl' }, s.label)));
     this.exploreBtn = button({ label: 'Free explore', icon: I.walk, title: 'Free explore (F)', onClick: () => this.toggleExplore() });
     el.replaceChildren(h('nav', { class: 'dock-row', 'aria-label': 'Tour' },
       button({ icon: I.prev, title: 'Previous stop (PageUp / B)', cls: 'icon', onClick: () => this.prev() }),
@@ -276,6 +367,7 @@ export class CVMode extends Mode {
 
   // ---- interaction --------------------------------------------------------------------
   onSelect(m) {
+    if (m.project) { this.selectProject(m.project); return; }
     const s = m.stop;
     if (!s) return;
     if (this.state.tourMode === 'free') {
@@ -285,19 +377,24 @@ export class CVMode extends Mode {
   }
 
   onClick(hit) {
-    if (!hit.mushroom && this.state.tourMode === 'free' && this.cardStop) this.closeCard();
+    if (!hit.mushroom && this.state.tourMode === 'free' && (this.cardStop || this.cardProject)) this.closeCard();
   }
 
   onKey(e) {
     if (e.repeat && !NEXT_KEYS.includes(e.key) && !PREV_KEYS.includes(e.key)) return false;
     if (NEXT_KEYS.includes(e.key)) { if (!e.repeat) this.next(); return true; }
     if (PREV_KEYS.includes(e.key)) { if (!e.repeat) this.prev(); return true; }
+    // Q / E browse the projects from the Experiments stop, a project card, or anywhere in Free Explore
+    if (PROJECT_KEYS[e.key] && (this.cardProject || this.state.currentStop === this.clearing.stop || this.state.tourMode === 'free')) {
+      this.stepProject(PROJECT_KEYS[e.key]);
+      return true;
+    }
     if (e.key === 'Enter' && this.state.tourMode === 'intro') { this.begin(); return true; }
     if (e.key === 'f' || e.key === 'F') { this.toggleExplore(); return true; }
     if ((e.key === 'g' || e.key === 'G') && this.state.tourMode !== 'guided') { this.begin(); return true; }
     const d = Number(e.key);
     if (Number.isInteger(d) && d >= 1 && d <= this.stops.length) { this.goToStop(d - 1); return true; }
-    if (e.key === 'Escape' && this.state.tourMode === 'free' && this.cardStop) { this.closeCard(); return true; }
+    if (e.key === 'Escape' && (this.cardProject || (this.state.tourMode === 'free' && this.cardStop))) { this.closeCard(); return true; }
     return false;
   }
 
@@ -324,15 +421,17 @@ export class CVMode extends Mode {
 
   updateLabels() {
     const cam = this.app.camera;
-    for (const s of this.stops) {
+    const focused = this.cardStop ?? this.cardProject;
+    for (const s of [...this.stops, ...this.projects]) {
       const m = s.marker;
       m.capWorldPosition(_v);
       _v.y += 0.3 * m.scale;
       const p = this.app.toScreen(_v);
-      const focus = s === this.cardStop;
-      let a = p ? smoothstep(40, 16, cam.position.distanceTo(_v)) : 0;
+      const focus = s === focused;
+      // project labels only show up close, so the overview stays readable
+      let a = p ? smoothstep(m.project ? 15 : 40, m.project ? 9 : 16, cam.position.distanceTo(_v)) : 0;
       a *= clamp(m.appear);
-      if (this.cardStop && !focus) a *= 0.45;
+      if (focused && !focus) a *= 0.45;
       if (focus) a = Math.max(a, p ? 1 : 0);
       const el = m.label;
       if (!p || a < 0.02) { el.style.opacity = 0; el.style.visibility = 'hidden'; continue; }

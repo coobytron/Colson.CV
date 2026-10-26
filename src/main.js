@@ -20,8 +20,13 @@ function fallback() {
   l.replaceChildren(h('div', { class: 'fallback-card' },
     h('h1', {}, DATA.name), h('p', { class: 'dim' }, `${DATA.role}. The 3D grove needs WebGL, so here are the stops as a list.`),
     h('ol', {}, ...DATA.stops.map((s) => h('li', {},
-      h('b', {}, s.title), ' ', h('span', { class: 'dim' }, s.dates), h('br'), s.summary,
-      ...s.links.map((k) => [' ', h('a', { href: k.href, target: '_blank', rel: 'noopener' }, k.label)]))))));
+      h('b', {}, s.label), ' ', h('span', { class: 'dim' }, s.dates), h('br'), s.summary,
+      ...s.links.map((k) => [' ', h('a', { href: k.href, target: '_blank', rel: 'noopener' }, k.label)])))),
+    h('h2', {}, 'Featured projects'),
+    h('ul', {}, ...DATA.projects.map((p) => h('li', {},
+      h('b', {}, p.label), h('br'), p.summary, ' ',
+      p.availability === 'web' && p.demoLink ? h('a', { href: p.demoLink, target: '_blank', rel: 'noopener' }, 'Open demo')
+        : h('span', { class: 'dim' }, p.availability === 'local' ? 'Live on Colson’s Mac' : 'No public link yet'))))));
 }
 
 function boot() {
@@ -48,7 +53,7 @@ function boot() {
     const stop = cv.byId[s.currentStop];
     status.textContent = s.tourMode === 'intro' ? 'Playable CV'
       : s.tourMode === 'free' ? 'Free explore'
-        : `${stop.index + 1} / ${cv.stops.length} · ${stop.title}`;
+        : `${stop.index + 1} / ${cv.stops.length} · ${stop.label}`;
   };
   cv.onState(syncStatus);
   syncStatus(cv.state);
