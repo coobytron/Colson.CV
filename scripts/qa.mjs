@@ -24,7 +24,7 @@ const opt = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[
 const port = Number(opt('port', 4177));
 const outDir = resolve(ROOT, opt('out', '.shots'));
 const timescale = Number(opt('timescale', 6));
-const only = opt('only', 'all'); // all | smoke | full | extras
+const only = opt('only', 'all'); // all | smoke | chapters | full | extras
 const sizes = opt('sizes', '1440x900,1920x1080').split(',').map((s) => s.split('x').map(Number));
 mkdirSync(outDir, { recursive: true });
 
@@ -590,6 +590,97 @@ async function noWebgl(base) {
   await browser.close();
 }
 
+// ---- career story (#15): each chapter's garden, its skills, its date over the garden; every project reachable ----
+async function chapters(base, size) {
+  const tag = `chapters ${size.join('x')}`;
+  const { browser, page, errors, outside } = await openPage(base, size);
+  const shot = (n) => page.screenshot({ path: join(outDir, `chapters-${size[0]}x${size[1]}-${n}.png`) });
+  // the date labels as drawn: text, opacity, box; and the stop / project labels and card they must stay clear of
+  const dates = () => page.evaluate(() => {
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
+    const shown = (e) => getComputedStyle(e).visibility === 'visible' && Number(getComputedStyle(e).opacity) > 0.05;
+    const card = document.getElementById('card');
+    return {
+      dates: [...document.querySelectorAll('#timeline .dlabel')].map((e) => ({ id: e.dataset.stop, text: e.querySelector('.when').textContent,
+        what: e.querySelector('.what')?.textContent ?? '', shown: shown(e), opacity: Number(getComputedStyle(e).opacity), box: box(e.querySelector('.when')) })),
+      labels: [...document.querySelectorAll('#labels .plabel')].filter(shown).map((e) => ({ text: e.textContent, box: box(e) })),
+      card: card.classList.contains('open') ? box(card) : null,
+      topbar: box(document.querySelector('.topbar')).h,
+    };
+  });
+  // wait for the camera to come to rest, then for the labels to finish fading
+  const settle = async () => {
+    let last = null, still = 0;
+    for (let t = 0; t < 80 && still < 3; t++) {
+      await sleep(300);
+      const p = await page.evaluate(() => window.colsonCV.app.camera.position.toArray());
+      still = last && Math.hypot(...p.map((v, i) => v - last[i])) < 0.004 ? still + 1 : 0;
+      last = p;
+    }
+    await sleep(1500);
+  };
+  const hits = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const data = [...CV.stops].sort((a, b) => a.presentationOrder - b.presentationOrder);
+
+  // the gardens grow chapter by chapter, CBU is one mushroom, Experiments is the largest
+  const grown = await page.evaluate(() => window.colsonCV.cv.stops.map((s) => ({ id: s.id, plants: s.plants.length, top: s.top, marker: s.marker.scale })));
+  const career = grown.slice(0, 5);
+  check(`${tag}: CBU is a single small mushroom; each chapter's garden is bigger than the last; Experiments is the largest`,
+    career[0].plants === 0 && career.every((g, i) => !i || (g.plants > career[i - 1].plants && g.marker > career[i - 1].marker))
+      && career[4].plants === Math.max(...grown.map((g) => g.plants)), grown.map((g) => `${g.id} ${g.plants}`).join(', '));
+
+  // the wide view first: the whole timeline, in order, before anyone opens a card
+  await page.keyboard.press('Enter');
+  await arriveAt(page, 'cbu');
+  await page.keyboard.press('f');
+  await settle();
+  const wide = await dates();
+  check(`${tag}: wide view: every chapter's date shows over its garden`, wide.dates.every((d) => d.shown), wide.dates.filter((d) => !d.shown).map((d) => d.id).join(', '));
+  await shot('00-wide-timeline');
+
+  await page.keyboard.press('g');
+  for (const [i, s] of data.entries()) {
+    await page.keyboard.press(String(i + 1));
+    const r = await arriveAt(page, s.id);
+    await settle();
+    const d = await dates();
+    const me = d.dates.find((x) => x.id === s.id);
+    const want = s.id === 'local-lab' ? `${s.label} · ${s.dates}` : s.dates;
+    check(`${tag}: ${s.id}: reached by walking, its date "${want}" is shown and brightest`, r.arrived && me.shown && me.text === want
+      && d.dates.every((x) => x.id === s.id || x.opacity <= me.opacity + 0.01), `opacity ${me.opacity.toFixed(2)}`);
+    const clash = d.labels.filter((l) => hits(me.box, l.box)).map((l) => l.text);
+    check(`${tag}: ${s.id}: date is on screen, below the top bar, clear of the card and every label`,
+      me.box.y >= d.topbar && me.box.y + me.box.h <= size[1] && me.box.x >= 0 && me.box.x + me.box.w <= size[0]
+        && clash.length === 0 && !(d.card && hits(me.box, d.card)), clash.join(', ') || JSON.stringify(me.box));
+    const skills = await page.$$eval('#card .skills li', (l) => l.map((x) => x.textContent));
+    check(`${tag}: ${s.id}: card shows the dates and exactly the skills this chapter added`,
+      JSON.stringify(skills) === JSON.stringify(s.skills) && (await page.$eval('#card .meta', (e) => e.textContent)) === s.dates, skills.join(', ') || 'none');
+    await shot(`${i + 1}-${s.id}`);
+  }
+
+  // every project mushroom can be walked to (and knelt at) through the Experiments garden
+  await page.keyboard.press('5');
+  await arriveAt(page, 'experiments');
+  const projects = CV.projects.map((p) => p.id);
+  for (const [i, id] of projects.entries()) {
+    await page.evaluate((pid) => { const cv = window.colsonCV.cv; cv.selectProject(cv.projects.find((p) => p.id === pid)); }, id);
+    let knelt = false;
+    for (let t = 0; t < 240 && !knelt; t++) {
+      await sleep(250);
+      knelt = await page.evaluate((pid) => {
+        const { cv, app } = window.colsonCV;
+        const a = app.avatar, p = cv.projects.find((x) => x.id === pid);
+        return a.pose === 'kneel' && Math.hypot(a.position.x - p.x, a.position.z - p.z) < 2;
+      }, id);
+    }
+    const lbl = await page.evaluate((pid) => { const e = window.colsonCV.cv.projects.find((p) => p.id === pid).marker.label; return getComputedStyle(e).visibility === 'visible'; }, id);
+    check(`${tag}: project ${id}: the Gardener walks over and kneels beside it; its label shows`, knelt && lbl);
+    if (i === 0 || i === projects.length - 1) { await sleep(1200); await shot(`5${i ? 'c' : 'b'}-project-${id}`); }
+  }
+  check(`${tag}: console clean, nothing leaves the origin`, errors.length === 0 && outside.length === 0, [...errors, ...outside].slice(0, 3).join(' | '));
+  await browser.close();
+}
+
 async function subpath() {
   // GitHub Pages serves a project site from /<repo>/: prove the build works from a sub-path, not just from the root
   const root = resolve(ROOT, 'dist'), prefix = '/Colson.CV/';
@@ -650,6 +741,7 @@ const runs = [];
 try {
   if (only === 'all' || only === 'full') for (const s of sizes) runs.push(await run(server.base, s));
   if (only === 'all' || only === 'smoke') for (const s of sizes) await smoke(server.base, s);
+  if (only === 'all' || only === 'chapters') for (const s of sizes) await chapters(server.base, s);
   if (only === 'all' || only === 'full') for (const s of sizes) await boredomSweep(server.base, s);
   if (only === 'all' || only === 'full') for (const s of sizes) await controls(server.base, s);
   if (only === 'all' || only === 'extras') {

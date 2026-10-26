@@ -5,13 +5,16 @@ import { seededGenome } from '../mushroom/genome.js';
 import { hashString, mulberry32, clamp, smoothstep } from '../lib/math.js';
 import { heightAt } from '../world/terrain.js';
 import { findFreeSpot } from '../avatar/steer.js';
+import { nearestLinks } from '../world/mycelium.js';
+import { growGarden, gardenCentre, keepClear, placeStand, STAND_OFF } from '../world/garden.js';
+import { TimelineLabels } from '../ui/timeline.js';
 import { BoredomClock, BOREDOM_SECONDS } from '../avatar/boredom.js';
 import { LocalLab, LAB_ID } from './LocalLab.js';
 import { h, button, icon } from '../ui/dom.js';
 import { I } from '../ui/icons.js';
 import DATA from '../data/cv.js';
 
-const STAND_OFF = 1.75; // how far in front of a marker (toward the middle of the grove) the Gardener stands
+const HOME = { x: 1.4, z: 3.2 }; // where the Gardener waits before the tour (see avatarHome)
 const AT_STOP = 1.2; // within this of the stand point counts as "at the stop"
 const VIEW_TURN = 0.6; // camera swings this far (rad) off the marker→centre line, so both are in frame
 
@@ -22,6 +25,14 @@ const NEXT_KEYS = ['PageDown', 'n', 'N', ']', '.'];
 const PREV_KEYS = ['PageUp', 'b', 'B', '[', ','];
 
 const _v = new THREE.Vector3();
+
+/** A strain's genome, varied by seed, then shaped by its chapter's profile (taller at VICE, brighter later on). */
+function chapterGenome(strain, seed, variety, g) {
+  const out = seededGenome(strain, seed, variety);
+  out.stemH = clamp(out.stemH * g.tall, 0.4, 2.2);
+  out.glow = clamp(out.glow * g.glow, 0.2, 1.8);
+  return out;
+}
 const _spot = new THREE.Vector2();
 
 /**
@@ -122,34 +133,60 @@ export class CVMode extends Mode {
   // ---- layout -------------------------------------------------------------------
   build() {
     const links = [];
+    const c = this.clearing;
+    // the stand points first, so every garden can keep them (and the walks between them) clear
+    for (const s of this.stops) placeStand(s);
+    const keep = keepClear(this.stops, c, { home: HOME, wideStand: LAB_ID }); // the lab's desk needs room
     let prev = null;
     for (const s of this.stops) {
       const seed = hashString(s.id);
-      const rng = mulberry32(seed);
-      const marker = this.add(new Mushroom(seededGenome(s.strain, seed, 0.12), { x: s.x, z: s.z, scale: 1.55, seed, data: s, grow: 1, autoGrow: false }));
+      const g = s.garden;
+      const marker = this.add(new Mushroom(chapterGenome(s.strain, seed, 0.12, g), { x: s.x, z: s.z, scale: g.marker, seed, data: s, grow: 1, autoGrow: false }));
       marker.stop = s;
       s.marker = marker;
-      // stand point: in front of the marker, toward the middle of the grove
-      const len = Math.hypot(s.x, s.z) || 1;
-      s.dir = { x: -s.x / len, z: -s.z / len };
-      s.stand = { x: s.x + s.dir.x * (s.standOff ?? STAND_OFF), z: s.z + s.dir.z * (s.standOff ?? STAND_OFF) };
-      // a few smaller mushrooms of the same strain behind it, clear of the stand side
-      // (the Experiments stop has the project clearing behind it instead)
-      const back = Math.atan2(-s.dir.z, -s.dir.x);
-      for (let i = 0; i < (s.id === this.clearing.stop ? 0 : 4); i++) {
-        const a = back + (i - 1.5) * 0.75 + (rng() - 0.5) * 0.3;
-        const r = 1.1 + rng() * 0.7;
-        const cs = seed + i + 1;
-        this.add(new Mushroom(seededGenome(s.strain, cs, 0.22), { x: s.x + Math.cos(a) * r, z: s.z + Math.sin(a) * r, scale: 0.42 + rng() * 0.32, seed: cs, grow: 1, autoGrow: false }));
+      // the chapter's garden: what this period added, grown from its profile (src/world/garden.js)
+      s.plants = growGarden(s, c, keep).map((p) => {
+        const m = this.add(new Mushroom(chapterGenome(p.strain, p.seed, g.variety, g),
+          { x: p.x, z: p.z, scale: p.scale, seed: p.seed, grow: 1, autoGrow: false, detail: p.scale < 0.6 ? 0.6 : 0.85 }));
+        m.chapter = s.id;
+        return m;
+      });
+      s.centre = gardenCentre(s, s.plants, g.marker);
+      s.top = Math.max(marker.height, ...s.plants.map((m) => m.height)); // the garden's tallest cap
+      // its mycelium: stronger and more branched as the career goes on
+      for (const ln of nearestLinks([marker, ...s.plants], { k: 1 + g.twigs, maxDist: 3.2 })) {
+        links.push({ a: ln.a, b: ln.b, color: s.color, width: 0.022 + 0.012 * g.mycelium, strength: 0.45 * g.mycelium, seed: (seed % 997) + ln.i * 13 + ln.j });
       }
       // the career path, marker to marker
-      if (prev) links.push({ a: { x: prev.x, z: prev.z }, b: { x: s.x, z: s.z }, color: s.color, width: 0.06, strength: 1.1, seed: s.index * 31 });
+      if (prev) links.push({ a: { x: prev.x, z: prev.z }, b: { x: s.x, z: s.z }, color: s.color, width: 0.06, strength: 1.1 * Math.max(0.8, g.mycelium * 0.8), seed: s.index * 31 });
       prev = s;
 
       marker.label = this.makeLabel(`${s.label}, ${s.dates}`, s.color, s.label, String(s.index + 1), () => this.onSelect(marker));
     }
     this.buildProjects(links);
     this.net.setLinks(links);
+    this.clearRocks();
+    this.dates = new TimelineLabels(this);
+  }
+
+  /**
+   * The gardens and the project clearing are tended ground: a scenery rock that landed on them (or on a
+   * stand point) is taken away, so it can't wall off a project or grow through a garden.
+   */
+  clearRocks() {
+    const c = this.clearing;
+    const plants = this.stops.flatMap((s) => s.plants);
+    const obstacles = this.app.obstacles;
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const o = obstacles[i];
+      if (o.kind !== 'rock') continue;
+      const onGround = Math.hypot(o.x - c.x, o.z - c.z) < c.r + o.r + 1.2
+        || this.stops.some((s) => Math.hypot(o.x - s.stand.x, o.z - s.stand.z) < o.r + 1.4 || Math.hypot(o.x - s.x, o.z - s.z) < o.r + 0.8)
+        || plants.some((m) => Math.hypot(o.x - m.x, o.z - m.z) < o.r + m.radius * 0.8);
+      if (!onGround) continue;
+      if (o.mesh) o.mesh.visible = false;
+      obstacles.splice(i, 1);
+    }
   }
 
   /** Project mushrooms on an arc in the clearing, opening away from their stop so its marker stays clear. */
@@ -199,7 +236,7 @@ export class CVMode extends Mode {
   }
 
   avatarHome() {
-    findFreeSpot(1.4, 3.2, 0.7, this.mushrooms, this.app.obstacles, _spot);
+    findFreeSpot(HOME.x, HOME.z, 0.7, this.mushrooms, this.app.obstacles, _spot);
     return { x: _spot.x, z: _spot.y, yaw: Math.atan2(-_spot.x, 19 - _spot.y) - 0.3 };
   }
 
@@ -270,12 +307,13 @@ export class CVMode extends Mode {
     const app = this.app, av = app.avatar;
     if (app.follow === av) app.follow = null;
     const tx = av.position.x * 0.6 + s.x * 0.4, tz = av.position.z * 0.6 + s.z * 0.4;
-    const target = new THREE.Vector3(tx, heightAt(tx, tz) + 1.05, tz);
+    // aim a little higher for a taller garden, so it and its date both fit in the frame
+    const target = new THREE.Vector3(tx, heightAt(tx, tz) + clamp(s.top * 0.5, 1.05, 1.9), tz);
     const ca = Math.cos(VIEW_TURN), sa = Math.sin(VIEW_TURN);
     const ox = s.dir.x * ca - s.dir.z * sa, oz = s.dir.x * sa + s.dir.z * ca;
     // face the camera, turned slightly toward the marker
     av.yawTarget = Math.atan2(ox, oz) + 0.35;
-    app.flyTo(target, { distance: 7.5, polar: 1.2, azimuth: Math.atan2(ox, oz), duration });
+    app.flyTo(target, { distance: s.garden.view, polar: 1.2, azimuth: Math.atan2(ox, oz), duration });
   }
 
   /** Free Explore: the visitor drives; the tour remembers its stop. */
@@ -284,7 +322,8 @@ export class CVMode extends Mode {
     this.boredom.reset();
     this.setState({ tourMode: 'free', avatarAtStop: false });
     this.closeCard();
-    this.app.flyTo(new THREE.Vector3(0, 0.9, 0), { distance: 22, polar: 1.1, duration: 1.6 });
+    // high and wide enough to see every garden, and the dates over them, in their walk order
+    this.app.flyTo(new THREE.Vector3(2, 0.9, 0), { distance: 30, polar: 0.8, azimuth: 0.15, duration: 1.6 });
   }
 
   toggleExplore() { if (this.state.tourMode === 'free') this.begin(); else this.explore(); }
@@ -304,6 +343,9 @@ export class CVMode extends Mode {
       h('h2', { id: 'cardTitle' }, s.label),
       h('div', { class: 'meta' }, h('span', { class: 'pill' }, s.dates)),
       h('p', { class: 'desc' }, s.summary),
+      // only what this chapter added: the story is cumulative, the card isn't
+      s.skills.length ? h('div', { class: 'skills' }, h('h3', {}, 'Skills added'),
+        h('ul', { 'aria-label': `Skills added at ${s.label}` }, ...s.skills.map((k) => h('li', {}, k)))) : null,
       s.id === LAB_ID ? this.lab.cardBlock() : null,
       s.links.length ? h('div', { class: 'card-actions' }, ...s.links.map((l) =>
         h('a', { class: 'btn primary', href: l.href, target: '_blank', rel: 'noopener' }, icon(I.external), h('span', { class: 'lbl' }, l.label)))) : null,
@@ -338,8 +380,9 @@ export class CVMode extends Mode {
     this.app.avatar.walkTo(null, { kneelAt: p.marker });
     const c = this.clearing;
     const cap = p.marker.capWorldPosition(_v);
+    // from inside the clearing, looking out: the project in front, the Experiments garden behind it
     this.app.flyTo(new THREE.Vector3(p.x, cap.y * 0.5 + heightAt(p.x, p.z) * 0.5, p.z),
-      { distance: 6, polar: 1.15, azimuth: Math.atan2(c.x - p.x, c.z - p.z) + Math.PI, duration: 1.4 });
+      { distance: 5.4, polar: 0.92, azimuth: Math.atan2(c.x - p.x, c.z - p.z), duration: 1.4 });
   }
 
   stepProject(dir) {
@@ -491,6 +534,7 @@ export class CVMode extends Mode {
     this.lab.update(dt);
     this.updateBoredom(dt, av);
     this.updateLabels();
+    this.dates.update(dt);
   }
 
   /**
@@ -543,7 +587,11 @@ export class CVMode extends Mode {
       if (focused && !focus) a *= 0.45;
       if (focus) a = Math.max(a, p ? 1 : 0);
       const el = m.label;
+      s.screen = null;
       if (!p || a < 0.02) { el.style.opacity = 0; el.style.visibility = 'hidden'; continue; }
+      // label sizes only change with the text size, so they're measured once per size (no layout per frame)
+      if (!el.size || el.size.zoom !== this.view.scale || !el.size.w) el.size = { w: el.offsetWidth, h: el.offsetHeight, zoom: this.view.scale };
+      s.screen = { x: p.x, y: p.y, w: el.size.w * (focus ? 1.08 : 1), h: el.size.h };
       el.style.visibility = 'visible';
       el.style.opacity = a.toFixed(2);
       el.style.transform = `translate(-50%, -100%) translate(${p.x.toFixed(1)}px, ${p.y.toFixed(1)}px) scale(${focus ? 1.08 : 1})`;

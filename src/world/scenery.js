@@ -123,7 +123,7 @@ function createRocks(rng, obstacles) {
     rock.castShadow = true;
     rock.receiveShadow = true;
     group.add(rock);
-    obstacles.push({ x, z, r: rad * 0.9, kind: 'rock' });
+    obstacles.push({ x, z, r: rad * 0.9, kind: 'rock', mesh: rock });
   }
   return group;
 }

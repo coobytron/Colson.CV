@@ -19,6 +19,7 @@ function listCard() {
     h('h1', { id: 'listTitle' }, DATA.name), h('p', { class: 'dim' }, `${DATA.role}. Career stops, in order.`),
     h('ol', {}, ...DATA.stops.map((s) => h('li', {},
       h('b', {}, s.label), ' ', h('span', { class: 'dim' }, s.dates), h('br'), s.summary,
+      s.skills.length ? [h('br'), h('span', { class: 'dim' }, `Skills added: ${s.skills.join(', ')}.`)] : null,
       ...s.links.map((k) => [' ', h('a', { href: k.href, target: '_blank', rel: 'noopener' }, k.label)])))),
     h('h2', {}, 'Featured projects'),
     h('ul', {}, ...DATA.projects.map((p) => h('li', {},

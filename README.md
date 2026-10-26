@@ -4,6 +4,8 @@ Colson Knight's CV as a small game. The Gardener from [Mycelia 2](https://github
 
 1. **CBU** · 2. **Freelance** · 3. **VICE** · 4. **Apple** · 5. **Experiments** · 6. **Local Lab**
 
+The walk is the story: each chapter adds skills, and its garden grows from them. CBU is one small mushroom; Freelance a small, varied cluster; VICE taller and more expressive; Apple a refined garden in ordered rows; Experiments the largest, densest grove, ringing the featured projects. Each garden's dates hang over it in the world, so the timeline reads from the projected view, and each chapter card lists the skills that chapter added. The gardens are grown from data profiles in `src/data/cv.js` (`garden`) by `src/world/garden.js`, deterministically, keeping every stand point, walk and project clear.
+
 It's built to sit behind a live talk. The tour moves only when the presenter says so, and visitors can wander freely afterwards.
 
 ## Controls
@@ -32,12 +34,12 @@ Clicker remotes that send PageUp/PageDown work out of the box. Tapping a mushroo
 npm install
 npm run dev      # http://localhost:5173
 npm run build    # static site in dist/ (relative paths, GitHub Pages ready)
-npm test         # unit tests for the boredom clock (no browser needed)
+npm test         # unit tests: boredom clock, career skills, garden growth and layout (no browser needed)
 npm run smoke    # just the staged classroom route (below), on a fresh page
 npm run qa       # build, then drive the tour in headless Chromium; screenshots + report in .shots/
 ```
 
-`npm run qa` runs at 1440×900 and 1920×1080. It checks that every stop is reached by walking, not teleporting; that the Gardener holds his place at a stop when left alone; that there's no auto-advance; that Free Explore and back keeps the tour's place; that number-key jumps work; and that the console stays clean. Add `--skip-build` to reuse `dist/`, or `--sizes 1440x900` for a single size.
+`npm run qa` runs at 1440×900 and 1920×1080. It checks that every stop is reached by walking, not teleporting; that the Gardener holds his place at a stop when left alone; that there's no auto-advance; that Free Explore and back keeps the tour's place; that number-key jumps work; and that the console stays clean. The career section (`--only chapters`) captures every chapter and a wide view of the whole timeline, and checks each date label is shown over its garden, brightest at the current stop and clear of the card and every label; that each card lists exactly its chapter's skills; that the gardens grow chapter by chapter; and that the Gardener can walk to and kneel at every project. Add `--skip-build` to reuse `dist/`, or `--sizes 1440x900` for a single size.
 
 Software GL renders only a few frames a second, so QA loads the page with `?quality=low&timescale=6`. `timescale` is a test/dev-only URL parameter that runs N simulation steps per rendered frame. It doesn't change anything for a normal visitor.
 

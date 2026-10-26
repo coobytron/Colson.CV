@@ -137,3 +137,37 @@ body.card-off #card { opacity: 0; pointer-events: none; transform: translateX(ca
 @media (max-width: 760px) { .actions.presenter .btn.small { display: none; } } /* presenter buttons are for laptops; the keys still work */
 
 button.plabel { min-height: 24px; } /* a tap target of at least 24 px, even for the small project labels */
+
+/* ---------- career timeline in the world (#15): a date over each garden ---------- */
+/* editorial, not a HUD: spaced capitals, no box, lit like the grove; never takes a click */
+#timeline { position: absolute; inset: 0; pointer-events: none; }
+.dlabel {
+  position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding-bottom: 6px;
+  white-space: nowrap; text-align: center; pointer-events: none; will-change: transform, opacity; visibility: hidden;
+  text-shadow: 0 0 18px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.95);
+}
+.dlabel .when {
+  font-family: var(--display); font-size: calc(clamp(15px, 1.25vw, 22px) * var(--ui-zoom)); font-weight: 600; line-height: 1;
+  letter-spacing: 0.16em; text-transform: uppercase; font-variant-numeric: tabular-nums; color: #f2fffd;
+}
+.dlabel .what {
+  font-size: calc(clamp(10.5px, 0.8vw, 13px) * var(--ui-zoom)); font-weight: 650; letter-spacing: 0.24em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--c) 75%, #ffffff);
+}
+.dlabel.lab .when { color: color-mix(in srgb, var(--c) 70%, #ffffff); }
+/* a hairline down to its garden */
+.dlabel .tether {
+  position: absolute; left: 50%; top: 100%; width: 1px; height: var(--tether, 0px); max-height: 40vh; margin-left: -0.5px;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--c) 70%, transparent), transparent);
+}
+.dlabel.current .when { text-shadow: 0 0 22px color-mix(in srgb, var(--c) 55%, transparent), 0 0 18px rgba(0, 0, 0, 0.9), 0 1px 3px rgba(0, 0, 0, 0.95); }
+body.labels-off #timeline { display: none; }
+
+/* ---------- skills added at each chapter ---------- */
+.skills { margin-top: 14px; }
+.skills h3 { margin: 0 0 7px; font-size: 11.5px; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); }
+.skills ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.skills li {
+  font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 38%, transparent);
+}
