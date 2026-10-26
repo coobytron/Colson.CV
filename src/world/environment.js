@@ -7,8 +7,11 @@ const NIGHT = P({ top: '#01050b', horizon: '#0c2c36', bottom: '#020607', fog: '#
 const DAWN = P({ top: '#1b2a4a', horizon: '#c9876a', bottom: '#150f10', fog: '#3c3a44', hemiSky: '#8aa0c0', hemiGround: '#1a1410', hemi: 0.8, key: '#ffb488', keyI: 1.4, sun: '#ffb070', exposure: 0.95 });
 const DAY = P({ top: '#2f6a86', horizon: '#9ec4c0', bottom: '#1e2a26', fog: '#6f9795', hemiSky: '#cfe8ff', hemiGround: '#2a3322', hemi: 1.1, key: '#fff0d8', keyI: 2.6, sun: '#fff2d0', exposure: 0.85 });
 const DUSK = P({ top: '#15163a', horizon: '#d8704a', bottom: '#120a0c', fog: '#3a2632', hemiSky: '#8a7aa8', hemiGround: '#150c0c', hemi: 0.75, key: '#ff8a5a', keyI: 1.2, sun: '#ff7a40', exposure: 0.95 });
+// Golden hour: a low amber sun raking through warm haze, the sky still blue overhead (the CV's setting)
+const GOLDEN = P({ top: '#35507e', horizon: '#ffb25a', bottom: '#2a1a0e', fog: '#b9844f', hemiSky: '#ffd8a0', hemiGround: '#3a2614', hemi: 1.05, key: '#ffb15a', keyI: 2.3, sun: '#ffb040', exposure: 0.95 });
+export const GOLDEN_HOUR = 0.7;
 const KEYS = [
-  [0.0, NIGHT], [0.2, NIGHT], [0.27, DAWN], [0.36, DAY], [0.64, DAY], [0.73, DUSK], [0.8, NIGHT], [1.0, NIGHT],
+  [0.0, NIGHT], [0.2, NIGHT], [0.27, DAWN], [0.36, DAY], [0.62, DAY], [GOLDEN_HOUR, GOLDEN], [0.76, DUSK], [0.82, NIGHT], [1.0, NIGHT],
 ];
 const STORM_TINT = new THREE.Color('#1c2428');
 
@@ -57,6 +60,7 @@ export class Environment {
     this.wetness = 0;
     this.night = 1;
     this.day = 0;
+    this.minNight = 0; // keeps the bioluminescence glowing in daylight (golden hour); 0 = only at night
     this.onLightning = null;
 
     this.pal = {};
@@ -139,7 +143,7 @@ export class Environment {
     const sunA = (this.timeOfDay - 0.25) * Math.PI * 2;
     const sunDir = new THREE.Vector3(Math.cos(sunA) * 0.75, Math.sin(sunA), 0.45).normalize();
     this.day = smoothstep(-0.05, 0.25, sunDir.y);
-    this.night = 1 - this.day;
+    this.night = Math.max(1 - this.day, this.minNight);
     const lightDir = sunDir.y > -0.02 ? sunDir : sunDir.clone().negate().setY(Math.abs(sunDir.y) * 0.8 + 0.35).normalize();
 
     const gloom = clamp(this.rain * 0.6 + this.storm * 0.4);

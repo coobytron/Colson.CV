@@ -8,6 +8,7 @@ import { findFreeSpot } from '../avatar/steer.js';
 import { nearestLinks } from '../world/mycelium.js';
 import { growGarden, gardenCentre, keepClear, placeStand, capsOverlap, STAND_OFF } from '../world/garden.js';
 import { createLogos } from '../world/logos.js';
+import { GOLDEN_HOUR } from '../world/environment.js';
 import { TimelineLabels } from '../ui/timeline.js';
 import { BoredomClock, BOREDOM_SECONDS } from '../avatar/boredom.js';
 import { LocalLab, LAB_ID } from './LocalLab.js';
@@ -272,7 +273,9 @@ export class CVMode extends Mode {
     super.enter(prev);
     const env = this.app.env;
     env.cycle = false;
-    env.targetTimeOfDay = 0.02;
+    // golden hour, not night: the grove still glows, lit low and warm (see GOLDEN in environment.js)
+    env.timeOfDay = env.targetTimeOfDay = GOLDEN_HOUR;
+    env.minNight = 0.6;
     env.speed = 1;
     env.setWeather({ rain: 0, wind: 0.18, mist: 0.3, storm: 0 });
     this.labelsEl.classList.add('show');
