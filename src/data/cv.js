@@ -4,7 +4,20 @@
 //
 // Stop fields: id (stable, used in URLs and by later features), category 'career', label, dates, summary,
 //   strain + color (marker mushroom), x / z (marker position), presentationOrder, links ([{ label, href }],
-//   public and verified only), unconfirmed (string[]).
+//   public and verified only), unconfirmed (string[]), skills (string[]: what this chapter *added*; the story is
+//   cumulative, so each card shows only its own), garden (the chapter's visual profile, see below).
+//   `dates` is the one source for the chapter cards, the text version and the date hovering over each garden.
+//
+// Garden profiles (#15): the career reads as skills compounding into an ever larger living grove, from one
+// small mushroom at CBU to the Experiments garden. Each stop's grove is grown from its profile (see
+// src/world/garden.js), so the progression lives here rather than as magic numbers in the renderer:
+//   marker   scale of the chapter's own mushroom      count   companion mushrooms around it
+//   spread   arc (rad) they fan across, behind it     ring    [min, max] distance from the marker
+//   scale    [min, max] companion scale               strains which strains grow there (variety of form)
+//   variety  genome mutation rate (0 = uniform)       tall    stem height multiplier (VICE stretches up)
+//   glow     bioluminescence multiplier               mycelium / twigs  thread strength and branching
+//   rows     optional: lay companions out in ordered rows (Apple's structured, intentional garden)
+//   view     camera distance when framing the stop
 // Project fields: id, category 'project', label, summary, strain + color, demoLink (verified public URL or
 //   null), repoLink (repo URL or null; set only where Colson has OK'd it), availability: 'web' (has demoLink),
 //   'local' (runs only on Colson's Mac) or 'none' (no public link established yet). Project positions are
@@ -25,6 +38,8 @@ export default {
       strain: 'porcelain',
       color: '#e9f1ff',
       x: -8.5, z: 7.5,
+      skills: ['Design foundations', 'Typography and composition', 'Visual thinking', 'Interest in code'],
+      garden: { marker: 0.78, count: 0, spread: 0, ring: [0, 0], scale: [0, 0], strains: [], variety: 0.12, tall: 1, glow: 0.8, mycelium: 0.5, twigs: 0, view: 7 },
       presentationOrder: 1,
       links: [],
       unconfirmed: [],
@@ -38,6 +53,8 @@ export default {
       strain: 'ember',
       color: '#ff9a3c',
       x: -11.5, z: -0.5,
+      skills: ['Production skills', 'Design skills', 'Experimentation'],
+      garden: { marker: 1.05, count: 6, spread: 2.2, ring: [1.0, 2.1], scale: [0.32, 0.55], strains: ['ember', 'porcelain', 'moss', 'inkcap'], variety: 0.32, tall: 1, glow: 0.9, mycelium: 0.8, twigs: 1, view: 7.2 },
       presentationOrder: 2,
       links: [],
       unconfirmed: [],
@@ -51,6 +68,8 @@ export default {
       strain: 'agaric',
       color: '#ff5c8a',
       x: -6, z: -8.5,
+      skills: ['Art direction', 'Experiential design', 'Directing', 'Animation'],
+      garden: { marker: 1.35, count: 9, spread: 2.5, ring: [1.0, 2.5], scale: [0.5, 0.85], strains: ['agaric', 'ember', 'inkcap', 'ghost'], variety: 0.3, tall: 1.35, glow: 1.05, mycelium: 1.0, twigs: 2, view: 8 },
       presentationOrder: 3,
       links: [],
       unconfirmed: [],
@@ -64,6 +83,8 @@ export default {
       strain: 'ghost',
       color: '#5ff2e2',
       x: 3.5, z: -9.5,
+      skills: ['Creative direction', 'Presentation design', 'Relationships', 'Organizational navigation'],
+      garden: { marker: 1.5, count: 13, spread: 2.4, ring: [1.4, 3.4], scale: [0.6, 1.0], strains: ['ghost', 'porcelain'], variety: 0.08, tall: 1.15, glow: 1.15, mycelium: 1.2, twigs: 2, rows: 3, view: 9 },
       presentationOrder: 4,
       links: [],
       unconfirmed: [],
@@ -77,6 +98,8 @@ export default {
       strain: 'violet',
       color: '#a98bff',
       x: 10.5, z: -2.5,
+      skills: ['Creative coding', 'Generative systems', 'Prototyping', 'Interactive design', 'Self-directed tool building'],
+      garden: { marker: 1.75, count: 46, spread: 3.6, ring: [1.0, 4.8], scale: [0.45, 1.25], strains: ['violet', 'ghost', 'ember', 'agaric', 'moss', 'inkcap', 'porcelain'], variety: 0.4, tall: 1.25, glow: 1.4, mycelium: 1.6, twigs: 3, view: 10.5 },
       presentationOrder: 5,
       links: [],
       unconfirmed: [],
@@ -91,6 +114,8 @@ export default {
       color: '#b6f45a',
       x: 8, z: 6.5,
       standOff: 2.0, // the Gardener sits at a workstation on the grove side of this marker (see LocalLab.js)
+      skills: [],
+      garden: { marker: 1.55, count: 4, spread: 2.4, ring: [1.1, 1.8], scale: [0.42, 0.74], strains: ['moss'], variety: 0.22, tall: 1, glow: 1, mycelium: 1, twigs: 1, view: 7.5 },
       presentationOrder: 6,
       links: [],
       unconfirmed: [],
