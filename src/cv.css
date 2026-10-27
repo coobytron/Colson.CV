@@ -49,6 +49,8 @@ button.plabel { font: inherit; font-size: 13px; font-weight: 600; color: #e8f5f3
 .fallback-card h1 { font-family: var(--display); margin: 0 0 6px; }
 .fallback-card .dim { color: var(--dim); }
 .fallback-card li { margin: 0 0 14px; }
+.fallback-card .stops { list-style: none; padding: 0; }
+.fallback-card .when { margin-left: 4px; font-variant-numeric: tabular-nums; }
 .fallback-card a { color: var(--accent); }
 
 @media (max-width: 760px) {
